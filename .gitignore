@@ -1,0 +1,22 @@
+# --- Python Virtual Environment (절대 올리지 마세요) ---
+.venv/
+venv/
+ENV/
+
+# --- IDE Settings (개인 설정 파일) ---
+.idea/
+.vscode/
+
+# --- Environment Variables (비밀키 등) ---
+ .env
+
+# --- HTTP Requests (비밀키 포함 가능성 있음, 필요 시 주석 해제) ---
+*.http
+
+# --- User Custom Rules (아까 요청하신 Spring md 파일 제외) ---
+ SPRING*.md
+ PROJECT_ARCHITECTURE.md
+
+# --- Python Compiled Files (자동 생성되는 파일들) ---
+__pycache__/
+*.pyc
