@@ -8,7 +8,7 @@ ENV/
 .vscode/
 
 # --- Environment Variables (비밀키 등) ---
- .env
+.env
 
 # --- HTTP Requests (비밀키 포함 가능성 있음, 필요 시 주석 해제) ---
 *.http
