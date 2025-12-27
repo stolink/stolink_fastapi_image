@@ -1,7 +1,9 @@
 # API Routes
 # REST API endpoints for health check and manual image operations
 
+import json
 import logging
+import uuid
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, UploadFile, File
@@ -11,6 +13,8 @@ from app.schemas import (
     ImageEditRequest,
     ImageResponse,
     HealthResponse,
+    QueuePublishRequest,
+    ImageAction,
 )
 from app.services import get_image_service, get_s3_service
 from app.consumers import get_image_consumer
@@ -110,4 +114,69 @@ async def upload_image(file: UploadFile = File(...)):
         
     except Exception as e:
         logger.error(f"File upload failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/api/test/queue")
+async def publish_to_queue(request: QueuePublishRequest):
+    """
+    Test endpoint: Publish a message directly to RabbitMQ queue.
+    
+    This allows testing the full queue -> consumer -> callback flow
+    without needing Spring Boot to publish messages.
+    
+    The message will be picked up by the ImageConsumer and processed.
+    """
+    import aio_pika
+    from app.config import get_settings
+    
+    settings = get_settings()
+    
+    # Generate job_id if not provided
+    job_id = f"test-{uuid.uuid4().hex[:8]}"
+    
+    # Build the message payload (matching Spring's format)
+    payload = {
+        "jobId": job_id,
+        "projectId": request.project_id,
+        "action": request.action.value,
+        "message": request.message,
+        "characterId": request.character_id,
+        "imageUrl": request.image_url,
+        "editRequest": request.edit_request,
+        "callbackUrl": request.callback_url,
+    }
+    
+    try:
+        # Connect to RabbitMQ and publish
+        connection = await aio_pika.connect_robust(settings.rabbitmq_url)
+        async with connection:
+            channel = await connection.channel()
+            
+            # Declare the queue (ensure it exists)
+            queue = await channel.declare_queue(
+                settings.rabbitmq_image_queue,
+                durable=True,
+            )
+            
+            # Publish the message
+            await channel.default_exchange.publish(
+                aio_pika.Message(
+                    body=json.dumps(payload).encode(),
+                    delivery_mode=aio_pika.DeliveryMode.PERSISTENT,
+                ),
+                routing_key=settings.rabbitmq_image_queue,
+            )
+            
+            logger.info(f"Published test message to queue: {job_id}")
+            
+        return {
+            "success": True,
+            "message": "Message published to queue",
+            "jobId": job_id,
+            "payload": payload,
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to publish to queue: {e}")
         raise HTTPException(status_code=500, detail=str(e))
