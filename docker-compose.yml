@@ -1,27 +1,7 @@
 # StoLink Image Worker - Docker Compose
-# RabbitMQ + FastAPI Image Generation Service
+# FastAPI Image Generation Service (connects to external RabbitMQ)
 
 services:
-  # RabbitMQ Message Broker
-  rabbitmq:
-    image: rabbitmq:3.13-management-alpine
-    container_name: stolink-rabbitmq
-    ports:
-      - "5672:5672" # AMQP
-      - "15672:15672" # Management UI
-    environment:
-      RABBITMQ_DEFAULT_USER: guest
-      RABBITMQ_DEFAULT_PASS: guest
-    volumes:
-      - rabbitmq_data:/var/lib/rabbitmq
-    healthcheck:
-      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-    networks:
-      - stolink-network
-
   # Image Worker (FastAPI)
   image-worker:
     image: ${IMAGE_NAME:-stolink-image-worker:latest}
@@ -45,25 +25,14 @@ services:
       # Gemini API Configuration (이미지 편집용)
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
 
-      # RabbitMQ Configuration
-      RABBITMQ_HOST: rabbitmq
-      RABBITMQ_PORT: 5672
-      RABBITMQ_USER: guest
-      RABBITMQ_PASSWORD: guest
-      RABBITMQ_IMAGE_QUEUE: stolink.image.queue
+      # External RabbitMQ Configuration (별도 EC2 서버 - 이미지 처리용)
+      RABBITMQ_HOST: ${RABBITMQ_IMAGE_HOST:-localhost}
+      RABBITMQ_PORT: ${RABBITMQ_IMAGE_PORT:-5672}
+      RABBITMQ_USER: ${RABBITMQ_IMAGE_USER:-guest}
+      RABBITMQ_PASSWORD: ${RABBITMQ_IMAGE_PASSWORD:-guest}
+      RABBITMQ_VHOST: ${RABBITMQ_IMAGE_VHOST:-stolink}
+      RABBITMQ_IMAGE_QUEUE: ${RABBITMQ_IMAGE_QUEUE:-stolink.image.queue}
 
-      # Spring Boot Callback (running on host)
-      SPRING_CALLBACK_URL: ${SPRING_CALLBACK_URL:-http://host.docker.internal:8080/api/internal/ai/image/callback}
-    depends_on:
-      rabbitmq:
-        condition: service_healthy
-    networks:
-      - stolink-network
+      # Spring Boot Callback (via ALB)
+      ALB_DNS_NAME: ${ALB_DNS_NAME:-}
     restart: unless-stopped
-
-volumes:
-  rabbitmq_data:
-
-networks:
-  stolink-network:
-    driver: bridge

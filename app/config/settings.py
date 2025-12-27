@@ -31,19 +31,29 @@ class Settings(BaseSettings):
     gemini_api_key: str = ""
     gemini_image_model_id: str = "gemini-2.5-flash-image"
     
-    # RabbitMQ Configuration
+    # RabbitMQ Configuration (external server)
     rabbitmq_host: str = "localhost"
     rabbitmq_port: int = 5672
     rabbitmq_user: str = "guest"
     rabbitmq_password: str = "guest"
+    rabbitmq_vhost: str = "stolink"  # VHost (without leading /)
     rabbitmq_image_queue: str = "stolink.image.queue"
     
-    # Spring Boot Callback
-    spring_callback_url: str = "http://localhost:8080/api/internal/ai/image/callback"
+    # Spring Boot Callback (via ALB)
+    alb_dns_name: str = ""  # ALB DNS name (e.g., my-alb-123.ap-northeast-2.elb.amazonaws.com)
+    
+    @property
+    def spring_callback_url(self) -> str:
+        """Build Spring callback URL from ALB DNS name."""
+        if not self.alb_dns_name:
+            return "http://localhost:8080/api/internal/ai/image/callback"
+        return f"http://{self.alb_dns_name}/api/internal/ai/image/callback"
     
     @property
     def rabbitmq_url(self) -> str:
-        return f"amqp://{self.rabbitmq_user}:{self.rabbitmq_password}@{self.rabbitmq_host}:{self.rabbitmq_port}/"
+        # URL encode the vhost (/ becomes %2F)
+        vhost = self.rabbitmq_vhost if self.rabbitmq_vhost else ""
+        return f"amqp://{self.rabbitmq_user}:{self.rabbitmq_password}@{self.rabbitmq_host}:{self.rabbitmq_port}/{vhost}"
     
     class Config:
         env_file = ".env"

@@ -10,8 +10,8 @@ AWS Bedrock 기반 이미지 생성/편집 FastAPI 워커 서비스입니다. **
 - **AWS Bedrock**: AI 모델 서비스
   - Claude 3.5 Haiku: 프롬프트 엔지니어링
   - Amazon Nova Canvas: 이미지 생성
-- **Google Gemini**: 이미지 편집 (Nano Banana)
-- **RabbitMQ**: 메시지 큐
+- **Google Gemini**: 이미지 편집 (gemini-2.5-flash-image)
+- **RabbitMQ**: 메시지 큐 (외부 EC2 서버)
 - **AWS S3**: 이미지 저장소
 
 ## 아키텍처
@@ -19,21 +19,28 @@ AWS Bedrock 기반 이미지 생성/편집 FastAPI 워커 서비스입니다. **
 ```
 ┌─────────────────┐      ┌─────────────────┐      ┌─────────────────┐
 │  Spring Boot    │──▶───│    RabbitMQ     │──▶───│  Image Worker   │
-│    Backend      │      │  (image queue)  │      │    (FastAPI)    │
+│   (via ALB)     │      │   (외부 EC2)    │      │    (FastAPI)    │
 └─────────────────┘      └─────────────────┘      └─────────────────┘
-                                                          │
-                                                          ▼
-                                               ┌─────────────────────┐
-                                               │   LangGraph State   │
-                                               │       Graph         │
-                                               └─────────────────────┘
-                                                          │
-                         ┌────────────────────────────────┼────────────────────────────────┐
-                         ▼                                ▼                                ▼
-                ┌─────────────────┐            ┌─────────────────┐            ┌─────────────────┐
-                │  Claude Haiku   │            │   Nova Canvas   │            │ Google Gemini   │
-                │ (프롬프트 생성)  │            │  (이미지 생성)  │            │  (이미지 편집)  │
-                └─────────────────┘            └─────────────────┘            └─────────────────┘
+        ▲                                                  │
+        │                                                  ▼
+        │                                       ┌─────────────────────┐
+        │                                       │   LangGraph State   │
+        │                                       │       Graph         │
+        │                                       └─────────────────────┘
+        │                                                  │
+        │          ┌───────────────────────────────────────┼───────────────────────────────────┐
+        │          ▼                                       ▼                                   ▼
+        │ ┌─────────────────┐                   ┌─────────────────┐                 ┌─────────────────┐
+        │ │  Claude Haiku   │                   │   Nova Canvas   │                 │ Google Gemini   │
+        │ │ (프롬프트 생성)  │                    │  (이미지 생성)   │                 │  (이미지 편집)  │
+        │ └─────────────────┘                   └─────────────────┘                 └─────────────────┘
+        │                                                  │
+        │                                                  ▼
+        │                                       ┌─────────────────┐
+        │                                       │    S3 업로드     │
+        │                                       └─────────────────┘
+        │                                                  │
+        └──────────── Callback (ALB) ──────────────────────┘
 ```
 
 ### LangGraph 워크플로우
@@ -54,12 +61,8 @@ AWS Bedrock 기반 이미지 생성/편집 FastAPI 워커 서비스입니다. **
 
 ### 1. 환경 설정
 
-```bash
-# .env 파일 생성
-cp .env.example .env
-
-# .env 파일 편집 - AWS 자격 증명 입력
-```
+> **Note**: 배포 시 환경변수는 GitHub Actions CI/CD를 통해 자동으로 `.env` 파일에 주입됩니다.  
+> 필요한 Secrets/Variables는 [gitsecrets.md](./gitsecrets.md)를 참고하세요.
 
 ### 2. Docker로 실행
 
@@ -80,21 +83,21 @@ docker-compose ps
 # 의존성 설치
 uv sync
 
-# RabbitMQ 실행
-docker-compose up -d rabbitmq
-
 # 서버 실행
 uv run uvicorn app.main:app --reload --port 8000
 ```
 
 ## API 엔드포인트
 
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/health` | 헬스 체크 |
-| GET | `/ready` | RabbitMQ 연결 상태 확인 |
-| POST | `/api/image/generate` | 수동 이미지 생성 (테스트용) |
-| POST | `/api/image/edit` | 수동 이미지 편집 (테스트용) |
+| Method | Path                  | Description                         |
+| ------ | --------------------- | ----------------------------------- |
+| GET    | `/`                   | 서비스 정보                         |
+| GET    | `/health`             | 헬스 체크 (RabbitMQ 연결 상태 포함) |
+| GET    | `/ready`              | RabbitMQ 연결 확인                  |
+| POST   | `/api/image/generate` | 수동 이미지 생성 (RabbitMQ 우회)    |
+| POST   | `/api/image/edit`     | 수동 이미지 편집 (RabbitMQ 우회)    |
+| POST   | `/api/test/queue`     | 테스트용 RabbitMQ 메시지 발행       |
+| POST   | `/upload`             | S3 이미지 업로드                    |
 
 ### 수동 이미지 생성 예시
 
@@ -104,20 +107,21 @@ curl -X POST http://localhost:8000/api/image/generate \
   -d '{"message": "검은색 정장을 입은 20대 한국인 남성"}'
 ```
 
-### 수동 이미지 편집 예시
+### RabbitMQ 큐 테스트
 
 ```bash
-curl -X POST http://localhost:8000/api/image/edit \
+curl -X POST http://localhost:8000/api/test/queue \
   -H "Content-Type: application/json" \
   -d '{
-    "imageUrl": "https://your-bucket.s3.region.amazonaws.com/image.png",
-    "editRequest": "이 인물이 10년 후 모습을 보여줘"
+    "action": "create",
+    "message": "검은색 정장을 입은 20대 한국인 남성",
+    "projectId": "test-project"
   }'
 ```
 
 ## RabbitMQ 메시지 형식
 
-이미지 생성 태스크 메시지:
+### 이미지 생성 태스크
 
 ```json
 {
@@ -125,12 +129,11 @@ curl -X POST http://localhost:8000/api/image/edit \
   "characterId": "char-uuid",
   "projectId": "project-uuid",
   "action": "create",
-  "message": "캐릭터 설명 텍스트",
-  "callbackUrl": "http://localhost:8080/api/internal/ai/image/callback"
+  "message": "캐릭터 설명 텍스트"
 }
 ```
 
-이미지 편집 태스크 메시지:
+### 이미지 편집 태스크
 
 ```json
 {
@@ -139,29 +142,49 @@ curl -X POST http://localhost:8000/api/image/edit \
   "projectId": "project-uuid",
   "action": "edit",
   "imageUrl": "기존 이미지 S3 URL",
-  "editRequest": "편집 요청 내용",
-  "callbackUrl": "http://localhost:8080/api/internal/ai/image/callback"
+  "editRequest": "편집 요청 내용"
+}
+```
+
+### 콜백 응답 (Spring으로 전송)
+
+```json
+{
+  "jobId": "job-uuid",
+  "characterId": "char-uuid",
+  "status": "completed",
+  "imageUrl": "https://cloudfront.net/media/character_xxx.png"
 }
 ```
 
 ## 환경 변수
 
-| 변수명 | 설명 | 기본값 |
-|--------|------|--------|
-| `AWS_ACCESS_KEY_ID` | AWS 액세스 키 | (필수) |
-| `AWS_SECRET_ACCESS_KEY` | AWS 시크릿 키 | (필수) |
-| `AWS_REGION` | Bedrock 리전 | `us-east-1` |
-| `AWS_S3_BUCKET_NAME` | S3 버킷 이름 | (필수) |
-| `AWS_S3_REGION` | S3 버킷 리전 | `ap-northeast-2` |
-| `GEMINI_API_KEY` | Gemini API 키 | (필수 - 이미지 편집용) |
-| `RABBITMQ_HOST` | RabbitMQ 호스트 | `localhost` |
-| `RABBITMQ_IMAGE_QUEUE` | 이미지 큐 이름 | `stolink.image.queue` |
-| `SPRING_CALLBACK_URL` | Spring Boot 콜백 URL | `http://localhost:8080/api/internal/ai/image/callback` |
+| 변수명                          | 설명                         | 기본값                 |
+| ------------------------------- | ---------------------------- | ---------------------- |
+| **AWS S3**                      |                              |                        |
+| `AWS_REGION`                    | 기본 AWS 리전                | `ap-northeast-2`       |
+| `AWS_S3_BUCKET_NAME`            | S3 버킷 이름                 | (필수)                 |
+| `CLOUDFRONT_URL`                | CloudFront 도메인            | (옵션)                 |
+| **AWS Bedrock**                 |                              |                        |
+| `AWS_BEDROCK_DEFAULT_REGION`    | Bedrock 리전                 | `us-east-1`            |
+| `AWS_BEDROCK_ACCESS_KEY_ID`     | Bedrock 전용 액세스 키       | (필수)                 |
+| `AWS_BEDROCK_SECRET_ACCESS_KEY` | Bedrock 전용 시크릿 키       | (필수)                 |
+| **Gemini**                      |                              |                        |
+| `GEMINI_API_KEY`                | Gemini API 키                | (필수 - 이미지 편집용) |
+| **RabbitMQ (외부)**             |                              |                        |
+| `RABBITMQ_IMAGE_HOST`           | RabbitMQ 호스트 (Private IP) | `localhost`            |
+| `RABBITMQ_IMAGE_PORT`           | RabbitMQ 포트                | `5672`                 |
+| `RABBITMQ_IMAGE_USER`           | RabbitMQ 사용자              | `guest`                |
+| `RABBITMQ_IMAGE_PASSWORD`       | RabbitMQ 비밀번호            | `guest`                |
+| `RABBITMQ_IMAGE_VHOST`          | RabbitMQ VHost               | `stolink`              |
+| `RABBITMQ_IMAGE_QUEUE`          | 이미지 큐 이름               | `stolink.image.queue`  |
+| **Spring Callback**             |                              |                        |
+| `ALB_DNS_NAME`                  | Spring ALB DNS 이름          | (필수)                 |
 
 ## 프로젝트 구조
 
 ```
-sto-link-image-backend/
+stolink_fastapi_image/
 ├── app/
 │   ├── main.py                    # FastAPI 앱 진입점
 │   ├── config/
@@ -169,7 +192,7 @@ sto-link-image-backend/
 │   ├── api/
 │   │   └── routes.py              # API 라우트
 │   ├── services/
-│   │   ├── bedrock_service.py     # AWS Bedrock 통합 (Claude, Nova Canvas)
+│   │   ├── bedrock_service.py     # AWS Bedrock (Claude, Nova Canvas)
 │   │   ├── gemini_service.py      # Google Gemini 이미지 편집
 │   │   ├── prompt_service.py      # 프롬프트 엔지니어링
 │   │   ├── image_service.py       # 이미지 생성/편집
@@ -177,13 +200,32 @@ sto-link-image-backend/
 │   │   └── callback_service.py    # Spring Boot 콜백
 │   ├── consumers/
 │   │   └── image_consumer.py      # RabbitMQ 컨슈머
+│   ├── graph/
+│   │   └── image_graph.py         # LangGraph 워크플로우
 │   └── schemas/
 │       └── image_task.py          # Pydantic 스키마
+├── .github/
+│   └── workflows/
+│       ├── deploy.yml             # main 브랜치 배포
+│       └── deploytest.yml         # deploytest 브랜치 배포
 ├── Dockerfile
 ├── docker-compose.yml
 ├── pyproject.toml
-└── .env.example
+└── gitsecrets.md                  # GitHub Secrets/Variables 문서
 ```
+
+## CI/CD
+
+GitHub Actions를 통해 자동 배포됩니다:
+
+- **main** 브랜치 → 운영 EC2
+- **deploytest** 브랜치 → 테스트 EC2
+
+### 배포 흐름
+
+1. pytest 테스트 실행
+2. Docker 이미지 빌드 (GHCR 푸시)
+3. SSM으로 EC2에 배포
 
 ## 관련 프로젝트
 
