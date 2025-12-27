@@ -10,19 +10,22 @@ class Settings(BaseSettings):
     app_name: str = "StoLink Image Worker"
     debug: bool = False
     
-    # AWS Configuration
+    # AWS S3 Configuration (can use EC2 IAM Role if credentials are empty)
     aws_access_key_id: str = ""
     aws_secret_access_key: str = ""
-    aws_region: str = "us-east-1"  # Bedrock region
+    aws_region: str = "ap-northeast-2"  # Default region
     aws_s3_bucket_name: str = ""
     aws_s3_region: str = "ap-northeast-2"  # S3 bucket region
     cloudfront_url: str = ""  # CloudFront distribution URL (e.g., https://xxx.cloudfront.net)
     
+    # AWS Bedrock Configuration (separate credentials for Bedrock services)
+    aws_bedrock_access_key_id: str = ""
+    aws_bedrock_secret_access_key: str = ""
+    aws_bedrock_default_region: str = "us-east-1"  # Bedrock region (Nova Canvas available here)
+    
     # AWS Bedrock Model IDs (using Inference Profile for cross-region support)
     bedrock_claude_model_id: str = "us.anthropic.claude-3-5-haiku-20241022-v1:0"
     bedrock_nova_canvas_model_id: str = "amazon.nova-canvas-v1:0"
-    # Deprecated: Stability AI (replaced with Google Gemini)
-    # bedrock_stability_replace_model_id: str = "stability.stable-image-search-replace-v1:0"
     
     # Google Gemini Configuration (for image editing)
     gemini_api_key: str = ""
