@@ -11,11 +11,12 @@ class Settings(BaseSettings):
     debug: bool = False
     
     # AWS Configuration
-    aws_access_key_id: str
-    aws_secret_access_key: str
+    aws_access_key_id: str = ""
+    aws_secret_access_key: str = ""
     aws_region: str = "us-east-1"  # Bedrock region
-    aws_s3_bucket_name: str
+    aws_s3_bucket_name: str = ""
     aws_s3_region: str = "ap-northeast-2"  # S3 bucket region
+    cloudfront_url: str = ""  # CloudFront distribution URL (e.g., https://xxx.cloudfront.net)
     
     # AWS Bedrock Model IDs (using Inference Profile for cross-region support)
     bedrock_claude_model_id: str = "us.anthropic.claude-3-5-haiku-20241022-v1:0"

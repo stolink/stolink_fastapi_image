@@ -4,7 +4,7 @@
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, UploadFile, File
 
 from app.schemas import (
     ImageGenerateRequest,
@@ -12,7 +12,7 @@ from app.schemas import (
     ImageResponse,
     HealthResponse,
 )
-from app.services import get_image_service
+from app.services import get_image_service, get_s3_service
 from app.consumers import get_image_consumer
 
 logger = logging.getLogger(__name__)
@@ -90,3 +90,24 @@ async def edit_image(request: ImageEditRequest):
             success=False,
             error=str(e),
         )
+
+
+@router.post("/upload")
+async def upload_image(file: UploadFile = File(...)):
+    """
+    Upload an image file to S3 and return the CloudFront URL.
+    
+    Args:
+        file: The image file to upload
+        
+    Returns:
+        dict with message and cloudfront_url
+    """
+    try:
+        s3_service = get_s3_service()
+        result = await s3_service.upload_file(file, prefix="upload")
+        return result
+        
+    except Exception as e:
+        logger.error(f"File upload failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
