@@ -15,6 +15,8 @@ dependencies = [
     "langgraph>=0.2.0",
     "langchain-aws>=0.2.0",
     "langchain-core>=0.3.0",
+    "google-genai>=1.56.0",
+    "pillow>=12.0.0",
 ]
 
 [project.optional-dependencies]

@@ -13,11 +13,6 @@ from app.config import get_settings
 logger = logging.getLogger(__name__)
 
 
-class ContentFilterError(Exception):
-    """Raised when Stability AI content filter rejects the prompt."""
-    pass
-
-
 class BedrockService:
     """Service for interacting with AWS Bedrock models."""
     
@@ -31,7 +26,7 @@ class BedrockService:
         )
         self.claude_model_id = settings.bedrock_claude_model_id
         self.nova_canvas_model_id = settings.bedrock_nova_canvas_model_id
-        self.stability_replace_model_id = settings.bedrock_stability_replace_model_id
+        # Note: Stability AI (stability_replace_model_id) has been replaced with Google Gemini
     
     def invoke_claude(self, system_prompt: str, user_message: str) -> str:
         """
@@ -118,68 +113,8 @@ class BedrockService:
             logger.error(f"Nova Canvas invocation failed: {e}")
             raise
     
-    def invoke_stability_search_replace(
-        self, 
-        image_bytes: bytes, 
-        prompt: str,
-        search_prompt: str,
-    ) -> bytes:
-        """
-        Invoke Stability Image Search and Replace for image editing.
-        
-        Args:
-            image_bytes: Source image as bytes
-            prompt: Description of what to replace with
-            search_prompt: Description of what to search/find in the image
-            
-        Returns:
-            Edited image as bytes (PNG)
-        """
-        try:
-            # Encode image to base64
-            image_base64 = base64.b64encode(image_bytes).decode("utf-8")
-            
-            body = {
-                "image": image_base64,
-                "prompt": prompt,
-                "search_prompt": search_prompt,
-                "output_format": "png",
-            }
-            
-            response = self.bedrock_runtime.invoke_model(
-                modelId=self.stability_replace_model_id,
-                contentType="application/json",
-                accept="application/json",
-                body=json.dumps(body)
-            )
-            
-            response_body = json.loads(response["body"].read())
-            logger.info(f"[Stability Debug] Response keys: {response_body.keys()}")
-            
-            # Check for content filter rejection
-            if "finish_reasons" in response_body:
-                finish_reasons = response_body.get("finish_reasons", [])
-                if any("Filter" in str(r) for r in finish_reasons):
-                    logger.error(f"[Stability] Content filter triggered!")
-                    logger.error(f"[Stability] search_prompt: {search_prompt}")
-                    logger.error(f"[Stability] prompt: {prompt}")
-                    raise ContentFilterError(
-                        f"Stability AI rejected the prompt due to content filter. "
-                        f"Avoid words like: scar, wound, injury, blood, cut, knife, etc. "
-                        f"Rejected prompts - search: '{search_prompt}', replace: '{prompt}'"
-                    )
-            
-            # Stability returns base64 encoded image
-            if "images" not in response_body:
-                logger.error(f"[Stability Debug] Unexpected response structure: {response_body}")
-                raise Exception(f"Stability error: {response_body}")
-                
-            result_base64 = response_body["images"][0]
-            return base64.b64decode(result_base64)
-            
-        except ClientError as e:
-            logger.error(f"Stability Search & Replace invocation failed: {e}")
-            raise
+    # Note: invoke_stability_search_replace() method has been removed.
+    # Image editing is now handled by GeminiService.edit_image()
 
 
 # Singleton instance

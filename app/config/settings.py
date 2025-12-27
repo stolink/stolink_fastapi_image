@@ -20,8 +20,12 @@ class Settings(BaseSettings):
     # AWS Bedrock Model IDs (using Inference Profile for cross-region support)
     bedrock_claude_model_id: str = "us.anthropic.claude-3-5-haiku-20241022-v1:0"
     bedrock_nova_canvas_model_id: str = "amazon.nova-canvas-v1:0"
-    # Stability AI Search & Replace - finds and replaces specific areas in images
-    bedrock_stability_replace_model_id: str = "stability.stable-image-search-replace-v1:0"
+    # Deprecated: Stability AI (replaced with Google Gemini)
+    # bedrock_stability_replace_model_id: str = "stability.stable-image-search-replace-v1:0"
+    
+    # Google Gemini Configuration (for image editing)
+    gemini_api_key: str = ""
+    gemini_image_model_id: str = "gemini-2.5-flash-image"
     
     # RabbitMQ Configuration
     rabbitmq_host: str = "localhost"

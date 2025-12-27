@@ -26,55 +26,55 @@ CREATE_CHARACTER_SYSTEM_PROMPT = """당신은 최고의 신분증 및 프로필 
 5. 결과물은 영어 프롬프트만 출력하세요. 다른 설명은 필요 없습니다."""
 
 
-EDIT_IMAGE_SYSTEM_PROMPT = """You are an expert at crafting prompts for Stability AI's Search & Replace image editing model.
+EDIT_IMAGE_SYSTEM_PROMPT = """You are an expert at crafting prompts for Google Gemini's image editing model.
 
-Your task: Convert the user's edit request into optimized English prompts that PRESERVE the original person's identity while making minimal, targeted changes.
+Your task: Convert the user's edit request into an optimized English prompt that describes the desired changes while PRESERVING the original person's identity.
 
 **CRITICAL RULES FOR IDENTITY PRESERVATION:**
-1. search_prompt: Target the SMALLEST, MOST SPECIFIC area possible
-2. replace_prompt: Describe ONLY what replaces that specific area
-3. NEVER target the whole face or person - always target a specific feature
-4. The model replaces EVERYTHING that matches search_prompt, so be very precise
+1. Always emphasize preserving the person's facial features and identity
+2. Describe the specific change you want, not a complete redescription of the person
+3. Be precise about which aspect to change (hair, clothing, expression, etc.)
+4. The model should only modify what you specifically mention
 
-**CONTENT FILTER RULES (VERY IMPORTANT):**
-- ABSOLUTELY FORBIDDEN: scar, wound, injury, blood, cut, knife, weapon, violence, damage
-- For facial marks: use "beauty mark", "freckle", "mole", "natural skin texture" 
-- For lines on face: use "expression line", "laugh line", "natural crease"
+**CONTENT GUIDELINES:**
+- Keep prompts positive and constructive
+- Describe the desired result, not what to remove
+- Use natural, descriptive language
 
 **EDIT TYPE STRATEGIES:**
 
 1. HAIR CHANGES (length, style, color):
-   - search_prompt: describe current hair precisely (e.g., "short straight black hair")
-   - replace_prompt: describe new hair only (e.g., "long wavy black hair past shoulders")
+   - "Change the hair to long flowing silver hair while keeping the same face"
+   - "Make the hair shorter with a modern pixie cut, preserve facial features"
 
-2. FACIAL MARKS/FEATURES:
-   - search_prompt: target very small area (e.g., "smooth cheek skin near left eye")
-   - replace_prompt: describe subtle addition (e.g., "cheek with small beauty mark near left eye")
-   - Keep it natural and subtle!
+2. FACIAL FEATURES:
+   - "Add subtle expression lines to make the person look more mature"
+   - "Add a small beauty mark on the left cheek"
 
-3. AGING (10+ years older) - CRITICAL: Target ONLY hair, not skin!
-   - search_prompt: "dark [color] hair" (target ONLY hair color, NOT the face!)
-   - replace_prompt: "salt and pepper gray hair with natural aging"
-   - NEVER target skin/face for aging - it destroys identity!
+3. AGING:
+   - "Age this person by 10-15 years: add gray/silver hair and subtle aging while preserving their core facial features and identity"
+   - Focus on natural aging signs like hair graying
 
 4. CLOTHING/ACCESSORIES:
-   - search_prompt: describe current item (e.g., "black suit jacket")
-   - replace_prompt: describe new item (e.g., "casual blue denim jacket")
+   - "Change the outfit to a casual blue denim jacket"
+   - "Add glasses with thin black frames"
 
 **EXAMPLES:**
 
 Hair change:
-{"search_prompt": "short black hair", "replace_prompt": "long flowing black hair reaching shoulders"}
+"Transform the short black hair into long flowing silver hair reaching past the shoulders. Keep the person's face and features exactly the same."
 
-Adding mark (safe for content filter):
-{"search_prompt": "clear smooth skin on left cheekbone", "replace_prompt": "skin with small natural mole on left cheekbone"}
+Aging:
+"Age this person naturally by about 15 years. Add salt-and-pepper gray hair. Preserve their facial identity and features."
 
-Aging (ONLY target hair!):
-{"search_prompt": "black hair on head", "replace_prompt": "gray and white hair with natural aging, salt and pepper style"}
+Clothing:
+"Change the formal suit to a casual sweater. Keep everything else the same."
 
 **OUTPUT FORMAT:**
-Return ONLY valid JSON:
-{"search_prompt": "specific small area", "replace_prompt": "replacement for that area only"}"""
+Return ONLY the English prompt text. No JSON, no quotes, just the prompt.
+
+Example output:
+Change the short black hair to long wavy auburn hair while preserving the person's facial features and identity."""
 
 
 class PromptService:
@@ -130,20 +130,20 @@ class PromptService:
             # Fallback to basic prompt
             return f"Professional ID photo portrait, {user_message}, front view, plain background, high quality"
     
-    def create_edit_prompts(self, edit_request: str) -> Tuple[str, str]:
+    def create_edit_prompt(self, edit_request: str) -> str:
         """
-        Generate search and replace prompts for image editing.
+        Generate an edit prompt for Gemini image editing.
         
         Args:
             edit_request: User's edit request in any language
             
         Returns:
-            Tuple of (search_prompt, replace_prompt)
+            Optimized English edit prompt for Gemini
         """
         try:
             messages = [
                 SystemMessage(content=EDIT_IMAGE_SYSTEM_PROMPT),
-                HumanMessage(content=f"Convert this edit request to optimized search/replace prompts:\n\n{edit_request}"),
+                HumanMessage(content=f"Convert this edit request to an optimized English prompt for Gemini:\n\n{edit_request}"),
             ]
             
             response = self.llm.invoke(messages)
@@ -158,46 +158,27 @@ class PromptService:
                 )
             else:
                 response_text = str(content)
-            response_text = response_text.strip()
             
-            # Debug: log the raw response
-            logger.info(f"[Claude Raw Response]: {response_text[:500]}")
+            # Clean up the response
+            edit_prompt = response_text.strip()
             
-            # Remove markdown code blocks if present
-            if "```json" in response_text:
-                response_text = response_text.split("```json")[1].split("```")[0].strip()
-            elif "```" in response_text:
-                response_text = response_text.split("```")[1].split("```")[0].strip()
+            # Remove any quotes that might wrap the prompt
+            if edit_prompt.startswith('"') and edit_prompt.endswith('"'):
+                edit_prompt = edit_prompt[1:-1]
+            if edit_prompt.startswith("'") and edit_prompt.endswith("'"):
+                edit_prompt = edit_prompt[1:-1]
             
-            # Parse JSON from response
-            start_idx = response_text.find("{")
-            end_idx = response_text.rfind("}") + 1
-            if start_idx != -1 and end_idx > start_idx:
-                json_str = response_text[start_idx:end_idx]
-                logger.info(f"[Claude JSON String]: {json_str}")
-                result = json.loads(json_str)
-                search_prompt = result.get("search_prompt", "")
-                replace_prompt = result.get("replace_prompt", "")
-                
-                # Validate that we got meaningful prompts
-                if not search_prompt or not replace_prompt:
-                    raise ValueError(f"Empty prompts returned from Claude. Parsed result: {result}")
-                    
-            else:
-                raise ValueError(f"No valid JSON found in response: {response_text[:200]}")
+            # Validate that we got a meaningful prompt
+            if not edit_prompt or len(edit_prompt) < 10:
+                raise ValueError(f"Edit prompt too short or empty: {edit_prompt}")
             
-            logger.info(f"Generated edit prompts - search: {search_prompt}, replace: {replace_prompt}")
-            return search_prompt, replace_prompt
+            logger.info(f"Generated edit prompt: {edit_prompt[:100]}...")
+            return edit_prompt
             
-        except json.JSONDecodeError as e:
-            logger.error(f"JSON parsing failed: {e}, response: {response_text[:300]}")
-            raise RuntimeError(
-                f"Failed to parse Claude response as JSON. Response: {response_text[:200]}"
-            ) from e
         except Exception as e:
-            logger.error(f"Failed to generate edit prompts: {e}")
+            logger.error(f"Failed to generate edit prompt: {e}")
             raise RuntimeError(
-                f"Failed to generate edit prompts via Claude. "
+                f"Failed to generate edit prompt via Claude. "
                 f"Please check your Bedrock configuration. Original error: {e}"
             ) from e
 

@@ -10,6 +10,7 @@ from langgraph.graph import StateGraph, START, END
 from app.services.bedrock_service import get_bedrock_service
 from app.services.prompt_service import get_prompt_service
 from app.services.s3_service import get_s3_service
+from app.services.gemini_service import get_gemini_service
 
 logger = logging.getLogger(__name__)
 
@@ -27,8 +28,7 @@ class ImageGraphState(TypedDict):
     
     # Intermediate
     enhanced_prompt: Optional[str]
-    search_prompt: Optional[str]  # For edit action
-    replace_prompt: Optional[str]  # For edit action
+    edit_prompt: Optional[str]  # For edit action (Gemini)
     generated_image_bytes: Optional[bytes]
     
     # Output
@@ -61,13 +61,12 @@ def generate_prompt_node(state: ImageGraphState) -> ImageGraphState:
                 "enhanced_prompt": enhanced_prompt,
             }
         else:
-            # Generate edit prompts (search + replace)
-            logger.info(f"[Node: generate_prompt] Creating edit prompts for: {state['message'][:50]}...")
-            search_prompt, replace_prompt = prompt_service.create_edit_prompts(state["message"])
+            # Generate edit prompt for Gemini
+            logger.info(f"[Node: generate_prompt] Creating edit prompt for: {state['message'][:50]}...")
+            edit_prompt = prompt_service.create_edit_prompt(state["message"])
             return {
                 **state,
-                "search_prompt": search_prompt,
-                "replace_prompt": replace_prompt,
+                "edit_prompt": edit_prompt,
             }
             
     except Exception as e:
@@ -101,7 +100,7 @@ def create_image_node(state: ImageGraphState) -> ImageGraphState:
 
 def edit_image_node(state: ImageGraphState) -> ImageGraphState:
     """
-    Node: Edit existing image using Stability Search & Replace.
+    Node: Edit existing image using Google Gemini (Nano Banana).
     """
     if state.get("error"):
         return state
@@ -111,13 +110,12 @@ def edit_image_node(state: ImageGraphState) -> ImageGraphState:
         s3_service = get_s3_service()
         source_bytes = s3_service.download_image(state["source_image_url"])
         
-        logger.info("[Node: edit_image] Invoking Stability Search & Replace...")
-        bedrock = get_bedrock_service()
+        logger.info("[Node: edit_image] Invoking Google Gemini...")
+        gemini = get_gemini_service()
         
-        edited_bytes = bedrock.invoke_stability_search_replace(
+        edited_bytes = gemini.edit_image(
             image_bytes=source_bytes,
-            prompt=state["replace_prompt"],
-            search_prompt=state["search_prompt"],
+            edit_prompt=state["edit_prompt"],
         )
         
         logger.info(f"[Node: edit_image] Edited image: {len(edited_bytes)} bytes")

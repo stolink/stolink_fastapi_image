@@ -10,7 +10,7 @@ AWS Bedrock 기반 이미지 생성/편집 FastAPI 워커 서비스입니다. **
 - **AWS Bedrock**: AI 모델 서비스
   - Claude 3.5 Haiku: 프롬프트 엔지니어링
   - Amazon Nova Canvas: 이미지 생성
-  - Stability Image Search & Replace: 이미지 편집
+- **Google Gemini**: 이미지 편집 (Nano Banana)
 - **RabbitMQ**: 메시지 큐
 - **AWS S3**: 이미지 저장소
 
@@ -31,7 +31,7 @@ AWS Bedrock 기반 이미지 생성/편집 FastAPI 워커 서비스입니다. **
                          ┌────────────────────────────────┼────────────────────────────────┐
                          ▼                                ▼                                ▼
                 ┌─────────────────┐            ┌─────────────────┐            ┌─────────────────┐
-                │  Claude Haiku   │            │   Nova Canvas   │            │   Stability AI  │
+                │  Claude Haiku   │            │   Nova Canvas   │            │ Google Gemini   │
                 │ (프롬프트 생성)  │            │  (이미지 생성)  │            │  (이미지 편집)  │
                 └─────────────────┘            └─────────────────┘            └─────────────────┘
 ```
@@ -153,6 +153,7 @@ curl -X POST http://localhost:8000/api/image/edit \
 | `AWS_REGION` | Bedrock 리전 | `us-east-1` |
 | `AWS_S3_BUCKET_NAME` | S3 버킷 이름 | (필수) |
 | `AWS_S3_REGION` | S3 버킷 리전 | `ap-northeast-2` |
+| `GEMINI_API_KEY` | Gemini API 키 | (필수 - 이미지 편집용) |
 | `RABBITMQ_HOST` | RabbitMQ 호스트 | `localhost` |
 | `RABBITMQ_IMAGE_QUEUE` | 이미지 큐 이름 | `stolink.image.queue` |
 | `SPRING_CALLBACK_URL` | Spring Boot 콜백 URL | `http://localhost:8080/api/internal/ai/image/callback` |
@@ -168,7 +169,8 @@ sto-link-image-backend/
 │   ├── api/
 │   │   └── routes.py              # API 라우트
 │   ├── services/
-│   │   ├── bedrock_service.py     # AWS Bedrock 통합
+│   │   ├── bedrock_service.py     # AWS Bedrock 통합 (Claude, Nova Canvas)
+│   │   ├── gemini_service.py      # Google Gemini 이미지 편집
 │   │   ├── prompt_service.py      # 프롬프트 엔지니어링
 │   │   ├── image_service.py       # 이미지 생성/편집
 │   │   ├── s3_service.py          # S3 업로드
