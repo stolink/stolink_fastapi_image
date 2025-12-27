@@ -1,0 +1,99 @@
+name: FastAPI CI/CD with GHCR
+
+on:
+  push:
+    branches: ["main"]
+
+permissions:
+  id-token: write # OIDC용
+  packages: write
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: uv sync --dev
+
+      - name: Run tests
+        run: uv run pytest -v
+
+  build-and-push:
+    runs-on: ubuntu-latest
+    outputs:
+      image-tag: ${{ steps.meta.outputs.tags }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Docker meta
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/stolink/stolink-fastapi-image
+          tags: |
+            type=raw,value=latest
+            type=sha,prefix=sha-
+
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          platforms: linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    needs: [test, build-and-push]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_SSMFULL_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Deploy to EC2 via SSM
+        run: |
+          aws ssm send-command \
+            --document-name "AWS-RunShellScript" \
+            --targets "Key=tag:tag,Values=stolink-fastapi-image" \
+            --parameters 'commands=[
+              "cd /home/ubuntu/stolink-fastapi-image || sudo -u ubuntu mkdir -p /home/ubuntu/stolink-fastapi-image && cd /home/ubuntu/stolink-fastapi-image",
+              "sudo -u ubuntu bash -c \"if [ -d .git ]; then git pull; else git clone https://github.com/stolink/stolink_fastapi_image.git .; fi\"",
+              "sudo -u ubuntu bash -c \"cat > .env << EOF\nAWS_REGION=${{ vars.AWS_REGION }}\nMEDIA_S3_BUCKET_NAME=${{ secrets.MEDIA_S3_BUCKET_NAME }}\nCLOUDFRONT_URL=${{ secrets.CLOUDFRONT_URL }}\nIMAGE_NAME=ghcr.io/stolink/stolink-fastapi-image:latest\nEOF\"",
+              "echo ${{ secrets.GH_PAT }} | sudo docker login ghcr.io -u stolink --password-stdin",
+              "sudo -u ubuntu bash -c \"cd /home/ubuntu/stolink-fastapi-image && sudo docker compose pull\"",
+              "sudo -u ubuntu bash -c \"cd /home/ubuntu/stolink-fastapi-image && sudo docker compose up -d\"",
+              "sudo docker image prune -f",
+              "echo Waiting for service to start...",
+              "sleep 10",
+              "for i in 1 2 3 4 5; do if curl -sf http://localhost:8000/health; then echo Health check passed!; exit 0; fi; echo Attempt $i failed, retrying...; sleep 5; done",
+              "echo Health check failed; exit 1"
+            ]' \
+            --timeout-seconds 300 \
+            --max-concurrency "50%" \
+            --max-errors "0" \
+            --output text
