@@ -41,7 +41,7 @@ class CallbackService:
         payload = ImageCallbackPayload(
             job_id=job_id,
             character_id=character_id,
-            status="completed",
+            status="SUCCESS",
             image_url=image_url,
             error=None,
         )
@@ -69,7 +69,7 @@ class CallbackService:
         payload = ImageCallbackPayload(
             job_id=job_id,
             character_id=character_id,
-            status="failed",
+            status="FAILED",
             image_url=None,
             error=error,
         )
