@@ -8,15 +8,21 @@ ENV/
 .vscode/
 
 # --- Environment Variables (비밀키 등) ---
-.env
+.env*
 
 # --- HTTP Requests (비밀키 포함 가능성 있음, 필요 시 주석 해제) ---
 *.http
 
 # --- User Custom Rules (아까 요청하신 Spring md 파일 제외) ---
- SPRING*.md
- PROJECT_ARCHITECTURE.md
+SPRING*.md
+PROJECT_ARCHITECTURE.md
+TROUBLESHOOTING.md
+AWS_REGION_ARCHITECTURE.md
 
 # --- Python Compiled Files (자동 생성되는 파일들) ---
 __pycache__/
 *.pyc
+
+test/generated_images
+
+reference
