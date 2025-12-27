@@ -15,7 +15,7 @@ services:
     volumes:
       - rabbitmq_data:/var/lib/rabbitmq
     healthcheck:
-      test: [ "CMD", "rabbitmq-diagnostics", "-q", "ping" ]
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -24,19 +24,18 @@ services:
 
   # Image Worker (FastAPI)
   image-worker:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    image: ${IMAGE_NAME:-stolink-image-worker:latest}
     container_name: stolink-image-worker
     ports:
       - "8000:8000"
     environment:
-      # AWS Configuration
-      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
-      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+      # AWS Configuration (EC2 IAM Role 사용 시 비워도 됨)
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
       AWS_REGION: ${AWS_REGION:-us-east-1}
-      AWS_S3_BUCKET_NAME: ${AWS_S3_BUCKET_NAME}
+      AWS_S3_BUCKET_NAME: ${MEDIA_S3_BUCKET_NAME:-}
       AWS_S3_REGION: ${AWS_S3_REGION:-ap-northeast-2}
+      CLOUDFRONT_URL: ${CLOUDFRONT_URL:-}
 
       # RabbitMQ Configuration
       RABBITMQ_HOST: rabbitmq
@@ -46,7 +45,6 @@ services:
       RABBITMQ_IMAGE_QUEUE: stolink.image.queue
 
       # Spring Boot Callback (running on host)
-      # Use host.docker.internal on Windows/Mac, or host IP on Linux
       SPRING_CALLBACK_URL: ${SPRING_CALLBACK_URL:-http://host.docker.internal:8080/api/internal/ai/image/callback}
     depends_on:
       rabbitmq:
@@ -57,7 +55,6 @@ services:
 
 volumes:
   rabbitmq_data:
-
 
 networks:
   stolink-network:
