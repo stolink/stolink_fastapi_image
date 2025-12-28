@@ -83,29 +83,42 @@ media/user-123/project-456/char-789/edited_20241229_103050.png
 
 ### 1. 환경 설정
 
+```bash
+# .env.example을 복사하여 .env 생성
+cp .env.example .env
+
+# .env 파일에 실제 값 입력 (AWS, Gemini API 키 등)
+```
+
 > **Note**: 배포 시 환경변수는 GitHub Actions CI/CD를 통해 자동으로 `.env` 파일에 주입됩니다.  
 > 필요한 Secrets/Variables는 [gitsecrets.md](./gitsecrets.md)를 참고하세요.
 
-### 2. Docker로 실행
+### 2. 로컬 개발 (Docker Compose)
 
 ```bash
-# 빌드 및 실행
-docker-compose up -d
+# RabbitMQ 포함 빌드 및 실행
+docker compose -f docker-compose-local.yml up --build -d
 
 # 로그 확인
-docker-compose logs -f image-worker
+docker compose -f docker-compose-local.yml logs -f image-worker
 
-# 상태 확인
-docker-compose ps
+# 중지
+docker compose -f docker-compose-local.yml down
+
+# 데이터 삭제 포함 중지
+docker compose -f docker-compose-local.yml down -v
 ```
 
-### 3. 로컬 실행 (개발용)
+- **RabbitMQ 관리 UI**: http://localhost:15672 (guest/guest)
+- **Image Worker API**: http://localhost:8000
+
+### 3. 로컬 실행 (Docker 없이)
 
 ```bash
 # 의존성 설치
 uv sync
 
-# 서버 실행
+# 서버 실행 (별도로 RabbitMQ 필요)
 uv run uvicorn app.main:app --reload --port 8000
 ```
 
@@ -254,8 +267,10 @@ stolink_fastapi_image/
 │   └── workflows/
 │       ├── deploy.yml             # main 브랜치 배포
 │       └── deploytest.yml         # deploytest 브랜치 배포
+├── .env.example                   # 환경변수 예제
 ├── Dockerfile
-├── docker-compose.yml
+├── docker-compose.yml             # 운영 배포용
+├── docker-compose-local.yml       # 로컬 개발용 (RabbitMQ 포함)
 ├── pyproject.toml
 └── gitsecrets.md                  # GitHub Secrets/Variables 문서
 ```
