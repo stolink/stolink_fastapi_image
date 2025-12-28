@@ -2,7 +2,7 @@ name: FastAPI CI/CD with GHCR
 
 on:
   push:
-    branches: ["deploytest"]
+    branches: ["dev"]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -85,7 +85,7 @@ jobs:
             --document-name "AWS-RunShellScript" \
             --targets "Key=tag:tag,Values=stolink-fastapi-image" \
             --parameters 'commands=[
-              "sudo -i -u ubuntu bash -c '\''cd /home/ubuntu/stolink-fastapi-image || mkdir -p /home/ubuntu/stolink-fastapi-image && cd /home/ubuntu/stolink-fastapi-image && if [ -d .git ]; then git fetch origin && git checkout deploytest && git pull origin deploytest; else git clone -b deploytest https://github.com/stolink/stolink_fastapi_image.git .; fi'\''",
+              "sudo -i -u ubuntu bash -c '\''cd /home/ubuntu/stolink-fastapi-image || mkdir -p /home/ubuntu/stolink-fastapi-image && cd /home/ubuntu/stolink-fastapi-image && if [ -d .git ]; then git fetch origin && git checkout dev && git pull origin dev; else git clone -b dev https://github.com/stolink/stolink_fastapi_image.git .; fi'\''",
               "cd /home/ubuntu/stolink-fastapi-image && sudo tee .env > /dev/null << EOF",
               "AWS_REGION=${{ vars.AWS_REGION }}",
               "AWS_S3_REGION=${{ vars.AWS_REGION }}",
