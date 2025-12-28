@@ -39,12 +39,12 @@ class Settings(BaseSettings):
     rabbitmq_vhost: str = "stolink"  # VHost (without leading /)
     rabbitmq_image_queue: str = "stolink.image.queue"
     
-    # Spring Boot Callback (via ALB)
-    alb_dns_name: str = ""  # ALB DNS name (e.g., my-alb-123.ap-northeast-2.elb.amazonaws.com)
+    # Spring Boot Callback (fallback only - prefer callback_url from RabbitMQ message)
+    alb_dns_name: str = ""  # Deprecated: use callback_url from task message instead
     
     @property
     def spring_callback_url(self) -> str:
-        """Build Spring callback URL from ALB DNS name."""
+        """Fallback callback URL when not provided in RabbitMQ message."""
         if not self.alb_dns_name:
             return "http://localhost:8080/api/internal/ai/image/callback"
         return f"http://{self.alb_dns_name}/api/internal/ai/image/callback"

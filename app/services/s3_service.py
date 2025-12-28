@@ -38,21 +38,43 @@ class S3Service:
         self.region = settings.aws_s3_region
         self.cloudfront_url = settings.cloudfront_url.rstrip("/") if settings.cloudfront_url else None
     
-    def upload_image(self, image_bytes: bytes, prefix: str = "character") -> str:
+    def upload_image(
+        self,
+        image_bytes: bytes,
+        prefix: str = "character",
+        user_id: Optional[str] = None,
+        project_id: Optional[str] = None,
+        character_id: Optional[str] = None,
+    ) -> str:
         """
         Upload image to S3 and return CloudFront URL (or S3 URL if CloudFront not configured).
         
         Args:
             image_bytes: Image data as bytes
-            prefix: Prefix for the S3 key (e.g., "character", "edited")
+            prefix: Prefix for the filename (e.g., "character", "edited")
+            user_id: User ID for hierarchical path
+            project_id: Project ID for hierarchical path
+            character_id: Character ID for hierarchical path
             
         Returns:
             CloudFront URL or S3 URL of the uploaded image
+            
+        Raises:
+            ValueError: If user_id, project_id, or character_id is missing
+            
+        S3 Key Structure:
+            media/{user_id}/{project_id}/{character_id}/{prefix}_{timestamp}.png
         """
+        # 필수 필드 검증
+        if not user_id or not project_id or not character_id:
+            raise ValueError("user_id, project_id, character_id are required for S3 upload")
+        
         try:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             file_name = f"{prefix}_{timestamp}.png"
-            s3_key = f"media/{file_name}"
+            
+            # Build hierarchical S3 key
+            s3_key = f"media/{user_id}/{project_id}/{character_id}/{file_name}"
             
             self.s3_client.put_object(
                 Bucket=self.bucket_name,

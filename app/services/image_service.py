@@ -15,13 +15,22 @@ class ImageService:
     def __init__(self):
         self.graph = get_image_graph()
     
-    def create_character_image(self, message: str, job_id: Optional[str] = None, character_id: Optional[str] = None) -> str:
+    def create_character_image(
+        self,
+        message: str,
+        job_id: Optional[str] = None,
+        user_id: Optional[str] = None,
+        project_id: Optional[str] = None,
+        character_id: Optional[str] = None,
+    ) -> str:
         """
         Create a new character image from description.
         
         Args:
             message: Character description (e.g., "검은색 정장을 입은 20대 한국인 남성")
             job_id: Optional job ID for tracking
+            user_id: Optional user ID for S3 path
+            project_id: Optional project ID for S3 path
             character_id: Optional character ID
             
         Returns:
@@ -44,6 +53,8 @@ class ImageService:
             "result_image_url": None,
             "error": None,
             "job_id": job_id,
+            "user_id": user_id,
+            "project_id": project_id,
             "character_id": character_id,
         }
         
@@ -66,6 +77,8 @@ class ImageService:
         image_url: str, 
         edit_request: str,
         job_id: Optional[str] = None,
+        user_id: Optional[str] = None,
+        project_id: Optional[str] = None,
         character_id: Optional[str] = None,
     ) -> str:
         """
@@ -75,6 +88,8 @@ class ImageService:
             image_url: URL of the source image
             edit_request: Edit instructions (e.g., "이 인물이 10년 후 모습을 보여줘")
             job_id: Optional job ID for tracking
+            user_id: Optional user ID for S3 path
+            project_id: Optional project ID for S3 path
             character_id: Optional character ID
             
         Returns:
@@ -97,6 +112,8 @@ class ImageService:
             "result_image_url": None,
             "error": None,
             "job_id": job_id,
+            "user_id": user_id,
+            "project_id": project_id,
             "character_id": character_id,
         }
         

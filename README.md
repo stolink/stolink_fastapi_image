@@ -57,6 +57,28 @@ AWS Bedrock 기반 이미지 생성/편집 FastAPI 워커 서비스입니다. **
                                          └──────────────────┘
 ```
 
+### S3 경로 구조
+
+이미지는 계층적 경로 구조로 S3에 저장됩니다:
+
+```
+media/{userId}/{projectId}/{characterId}/{prefix}_{timestamp}.png
+```
+
+예시:
+
+```
+media/user-123/project-456/char-789/character_20241229_103045.png
+media/user-123/project-456/char-789/edited_20241229_103050.png
+```
+
+이 구조의 장점:
+
+- **사용자별 데이터 격리**: 각 사용자의 데이터를 분리
+- **프로젝트별 관리**: 프로젝트 단위로 이미지 그룹화
+- **캐릭터 추적**: 특정 캐릭터의 모든 이미지 버전 추적
+- **라이프사이클 관리**: S3 라이프사이클 규칙 적용 용이
+
 ## 시작하기
 
 ### 1. 환경 설정
@@ -126,10 +148,12 @@ curl -X POST http://localhost:8000/api/test/queue \
 ```json
 {
   "jobId": "job-uuid",
+  "userId": "user-uuid",
   "characterId": "char-uuid",
   "projectId": "project-uuid",
   "action": "create",
-  "message": "캐릭터 설명 텍스트"
+  "message": "캐릭터 설명 텍스트",
+  "callbackUrl": "http://alb-dns/api/internal/ai/image/callback"
 }
 ```
 
@@ -138,22 +162,38 @@ curl -X POST http://localhost:8000/api/test/queue \
 ```json
 {
   "jobId": "job-uuid",
+  "userId": "user-uuid",
   "characterId": "char-uuid",
   "projectId": "project-uuid",
   "action": "edit",
   "imageUrl": "기존 이미지 S3 URL",
-  "editRequest": "편집 요청 내용"
+  "editRequest": "편집 요청 내용",
+  "callbackUrl": "http://alb-dns/api/internal/ai/image/callback"
 }
 ```
 
 ### 콜백 응답 (Spring으로 전송)
 
+> **Note**: `callbackUrl`이 메시지에 포함된 경우 해당 URL로 전송하고,  
+> 없으면 환경변수 `ALB_DNS_NAME`으로 기본 콜백 URL을 구성합니다.
+
 ```json
 {
   "jobId": "job-uuid",
   "characterId": "char-uuid",
-  "status": "completed",
-  "imageUrl": "https://cloudfront.net/media/character_xxx.png"
+  "status": "COMPLETED",
+  "imageUrl": "https://cloudfront.net/media/user-123/project-456/char-789/character_xxx.png"
+}
+```
+
+실패 시:
+
+```json
+{
+  "jobId": "job-uuid",
+  "characterId": "char-uuid",
+  "status": "FAILED",
+  "error": "에러 메시지"
 }
 ```
 
@@ -204,6 +244,12 @@ stolink_fastapi_image/
 │   │   └── image_graph.py         # LangGraph 워크플로우
 │   └── schemas/
 │       └── image_task.py          # Pydantic 스키마
+├── test/                          # 개발용 Jupyter 테스트
+│   ├── image_generation_test.ipynb        # 이미지 생성 테스트
+│   ├── image_generation_gemini_test.ipynb # Gemini 편집 테스트
+│   └── integration_test_with_s3.ipynb     # S3 통합 테스트
+├── tests/                         # pytest 자동화 테스트
+│   └── test_health.py             # 헬스체크 테스트
 ├── .github/
 │   └── workflows/
 │       ├── deploy.yml             # main 브랜치 배포

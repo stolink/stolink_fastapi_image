@@ -13,6 +13,7 @@ class ImageAction(str, Enum):
 class ImageTaskMessage(BaseModel):
     """Message received from RabbitMQ image queue."""
     job_id: str = Field(..., alias="jobId")
+    user_id: Optional[str] = Field(None, alias="userId")
     character_id: Optional[str] = Field(None, alias="characterId")
     project_id: str = Field(..., alias="projectId")
     action: ImageAction
@@ -42,6 +43,7 @@ class ImageGenerateRequest(BaseModel):
     """Request body for manual image generation API."""
     message: str = Field(..., description="Character description")
     job_id: Optional[str] = Field(None, alias="jobId")
+    user_id: Optional[str] = Field(None, alias="userId")
     character_id: Optional[str] = Field(None, alias="characterId")
     project_id: Optional[str] = Field(None, alias="projectId")
 
@@ -79,6 +81,7 @@ class QueuePublishRequest(BaseModel):
     """Request body for publishing test message to RabbitMQ queue."""
     action: ImageAction = Field(ImageAction.CREATE, description="create or edit")
     message: str = Field(..., description="Character description or edit instruction")
+    user_id: Optional[str] = Field(None, alias="userId")
     project_id: str = Field("test-project", alias="projectId")
     character_id: Optional[str] = Field(None, alias="characterId")
     image_url: Optional[str] = Field(None, alias="imageUrl", description="Required for edit action")
