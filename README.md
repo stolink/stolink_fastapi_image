@@ -266,7 +266,7 @@ stolink_fastapi_image/
 ├── .github/
 │   └── workflows/
 │       ├── deploy.yml             # main 브랜치 배포
-│       └── deploytest.yml         # deploytest 브랜치 배포
+│       └── deploy_dev.yml         # dev 브랜치 배포
 ├── .env.example                   # 환경변수 예제
 ├── Dockerfile
 ├── docker-compose.yml             # 운영 배포용
@@ -280,7 +280,7 @@ stolink_fastapi_image/
 GitHub Actions를 통해 자동 배포됩니다:
 
 - **main** 브랜치 → 운영 EC2
-- **deploytest** 브랜치 → 테스트 EC2
+- **deploy_dev** 브랜치 → 테스트 EC2
 
 ### 배포 흐름
 
