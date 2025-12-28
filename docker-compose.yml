@@ -1,5 +1,11 @@
-# StoLink Image Worker - Docker Compose
+# StoLink Image Worker - Docker Compose (Production)
 # FastAPI Image Generation Service (connects to external RabbitMQ)
+#
+# 사용법 (운영/테스트 서버 - GitHub Actions에서 자동 실행):
+# 1. 환경변수 설정: GitHub Secrets에서 자동 주입
+# 2. 실행: docker compose up -d
+# 3. 중지: docker compose down
+# 4. 로그: docker compose logs -f image-worker
 
 services:
   # Image Worker (FastAPI)
