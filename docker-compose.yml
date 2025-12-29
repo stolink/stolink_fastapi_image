@@ -38,7 +38,4 @@ services:
       RABBITMQ_PASSWORD: ${RABBITMQ_IMAGE_PASSWORD:-guest}
       RABBITMQ_VHOST: ${RABBITMQ_IMAGE_VHOST:-stolink}
       RABBITMQ_IMAGE_QUEUE: ${RABBITMQ_IMAGE_QUEUE:-stolink.image.queue}
-
-      # Spring Boot Callback (via ALB)
-      ALB_DNS_NAME: ${ALB_DNS_NAME:-}
     restart: unless-stopped

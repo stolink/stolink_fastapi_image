@@ -16,6 +16,9 @@ class Settings(BaseSettings):
     aws_region: str = "ap-northeast-2"  # Default region
     aws_s3_bucket_name: str = ""
     aws_s3_region: str = "ap-northeast-2"  # S3 bucket region
+    s3_endpoint_url: str = ""  # Custom S3 endpoint (for MinIO or LocalStack)
+    s3_access_key_id: str = ""  # S3-specific credentials (for MinIO, overrides aws_*)
+    s3_secret_access_key: str = ""  # S3-specific credentials (for MinIO, overrides aws_*)
     cloudfront_url: str = ""  # CloudFront distribution URL (e.g., https://xxx.cloudfront.net)
     
     # AWS Bedrock Configuration (separate credentials for Bedrock services)
@@ -38,16 +41,6 @@ class Settings(BaseSettings):
     rabbitmq_password: str = "guest"
     rabbitmq_vhost: str = "stolink"  # VHost (without leading /)
     rabbitmq_image_queue: str = "stolink.image.queue"
-    
-    # Spring Boot Callback (fallback only - prefer callback_url from RabbitMQ message)
-    alb_dns_name: str = ""  # Deprecated: use callback_url from task message instead
-    
-    @property
-    def spring_callback_url(self) -> str:
-        """Fallback callback URL when not provided in RabbitMQ message."""
-        if not self.alb_dns_name:
-            return "http://localhost:8080/api/internal/ai/image/callback"
-        return f"http://{self.alb_dns_name}/api/internal/ai/image/callback"
     
     @property
     def rabbitmq_url(self) -> str:

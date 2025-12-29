@@ -14,28 +14,32 @@ logger = logging.getLogger(__name__)
 
 
 class S3Service:
-    """Service for uploading images to AWS S3."""
+    """Service for uploading images to AWS S3 or S3-compatible storage (MinIO)."""
     
     def __init__(self):
         settings = get_settings()
         
-        # EC2 역할을 사용할 경우 인증 정보를 비워두면 자동으로 역할을 사용
-        if settings.aws_access_key_id and settings.aws_secret_access_key:
-            self.s3_client = boto3.client(
-                "s3",
-                aws_access_key_id=settings.aws_access_key_id,
-                aws_secret_access_key=settings.aws_secret_access_key,
-                region_name=settings.aws_s3_region,
-            )
-        else:
-            # EC2 IAM Role 사용 (인증 정보 없이 리전만 명시)
-            self.s3_client = boto3.client(
-                "s3",
-                region_name=settings.aws_s3_region,
-            )
+        # S3 클라이언트 설정 (MinIO 등 S3 호환 스토리지 지원)
+        client_kwargs = {
+            "region_name": settings.aws_s3_region,
+        }
+        
+        # Custom endpoint (MinIO, LocalStack 등)
+        if settings.s3_endpoint_url:
+            client_kwargs["endpoint_url"] = settings.s3_endpoint_url
+        
+        # 인증 정보: S3 전용 자격증명 우선, 없으면 AWS 기본 자격증명, EC2 IAM Role 사용 시 생략 가능
+        access_key = settings.s3_access_key_id or settings.aws_access_key_id
+        secret_key = settings.s3_secret_access_key or settings.aws_secret_access_key
+        if access_key and secret_key:
+            client_kwargs["aws_access_key_id"] = access_key
+            client_kwargs["aws_secret_access_key"] = secret_key
+        
+        self.s3_client = boto3.client("s3", **client_kwargs)
         
         self.bucket_name = settings.aws_s3_bucket_name
         self.region = settings.aws_s3_region
+        self.endpoint_url = settings.s3_endpoint_url if settings.s3_endpoint_url else None
         self.cloudfront_url = settings.cloudfront_url.rstrip("/") if settings.cloudfront_url else None
     
     def upload_image(
@@ -83,9 +87,12 @@ class S3Service:
                 ContentType="image/png",
             )
             
-            # CloudFront URL 우선, 없으면 S3 URL 반환
+            # URL 반환 우선순위: CloudFront > Custom Endpoint (MinIO) > S3
             if self.cloudfront_url:
                 url = f"{self.cloudfront_url}/{s3_key}"
+            elif self.endpoint_url:
+                # MinIO 등 커스텀 엔드포인트 사용
+                url = f"{self.endpoint_url.rstrip('/')}/{self.bucket_name}/{s3_key}"
             else:
                 url = f"https://{self.bucket_name}.s3.{self.region}.amazonaws.com/{s3_key}"
             

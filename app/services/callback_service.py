@@ -5,7 +5,6 @@ import logging
 from typing import Optional
 import httpx
 
-from app.config import get_settings
 from app.schemas import ImageCallbackPayload
 
 logger = logging.getLogger(__name__)
@@ -15,8 +14,6 @@ class CallbackService:
     """Service for sending callbacks to Spring Boot backend."""
     
     def __init__(self):
-        settings = get_settings()
-        self.callback_url = settings.spring_callback_url
         self.timeout = 30.0
     
     async def send_success_callback(
@@ -33,10 +30,13 @@ class CallbackService:
             job_id: Job ID to report
             image_url: URL of the generated/edited image
             character_id: Optional character ID
-            callback_url: Override callback URL if provided
+            callback_url: Callback URL (required)
             
         Returns:
             True if callback was successful
+            
+        Raises:
+            ValueError: If callback_url is not provided
         """
         payload = ImageCallbackPayload(
             job_id=job_id,
@@ -61,10 +61,13 @@ class CallbackService:
             job_id: Job ID to report
             error: Error message
             character_id: Optional character ID
-            callback_url: Override callback URL if provided
+            callback_url: Callback URL (required)
             
         Returns:
             True if callback was successful
+            
+        Raises:
+            ValueError: If callback_url is not provided
         """
         payload = ImageCallbackPayload(
             job_id=job_id,
@@ -81,18 +84,20 @@ class CallbackService:
         callback_url: Optional[str] = None,
     ) -> bool:
         """Send callback to Spring Boot."""
-        url = callback_url or self.callback_url
+        if not callback_url:
+            logger.warning(f"No callback_url provided for job {payload.job_id}, skipping callback")
+            return False
         
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
                 response = await client.post(
-                    url,
+                    callback_url,
                     json=payload.model_dump(by_alias=True),
                     headers={"Content-Type": "application/json"},
                 )
                 
                 if response.status_code in (200, 201, 202):
-                    logger.info(f"Callback sent successfully to {url} for job {payload.job_id}")
+                    logger.info(f"Callback sent successfully to {callback_url} for job {payload.job_id}")
                     return True
                 else:
                     logger.warning(

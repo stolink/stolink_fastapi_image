@@ -13,6 +13,7 @@ AWS Bedrock 기반 이미지 생성/편집 FastAPI 워커 서비스입니다. **
 - **Google Gemini**: 이미지 편집 (gemini-2.5-flash-image)
 - **RabbitMQ**: 메시지 큐 (외부 EC2 서버)
 - **AWS S3**: 이미지 저장소
+- **MinIO**: 로컬 S3 호환 스토리지 (개발용)
 
 ## 아키텍처
 
@@ -95,22 +96,31 @@ cp .env.example .env
 
 ### 2. 로컬 개발 (Docker Compose)
 
+로컬 개발 환경은 RabbitMQ와 MinIO(S3 에뮬레이터)를 포함합니다:
+
 ```bash
-# RabbitMQ 포함 빌드 및 실행
-docker compose -f docker-compose-local.yml up --build -d
+# RabbitMQ + MinIO 포함 빌드 및 실행
+docker compose -f docker-compose.local.yml up --build -d
 
 # 로그 확인
-docker compose -f docker-compose-local.yml logs -f image-worker
+docker compose -f docker-compose.local.yml# logs -f image-worker
 
 # 중지
-docker compose -f docker-compose-local.yml down
+docker compose -f docker-compose.local.yml# down
 
 # 데이터 삭제 포함 중지
-docker compose -f docker-compose-local.yml down -v
+docker compose -f docker-compose.local.yml# down -v
 ```
 
-- **RabbitMQ 관리 UI**: http://localhost:15672 (guest/guest)
-- **Image Worker API**: http://localhost:8000
+**로컬 서비스:**
+
+| 서비스           | URL                    | 인증                  |
+| ---------------- | ---------------------- | --------------------- |
+| Image Worker API | http://localhost:8000  | -                     |
+| RabbitMQ 관리 UI | http://localhost:15672 | guest/guest           |
+| MinIO Console    | http://localhost:9001  | minioadmin/minioadmin |
+
+> **Note**: 생성된 이미지는 MinIO Console → `stolink-test` 버킷에서 확인할 수 있습니다.
 
 ### 3. 로컬 실행 (Docker 없이)
 
@@ -131,7 +141,6 @@ uv run uvicorn app.main:app --reload --port 8000
 | GET    | `/ready`              | RabbitMQ 연결 확인                  |
 | POST   | `/api/image/generate` | 수동 이미지 생성 (RabbitMQ 우회)    |
 | POST   | `/api/image/edit`     | 수동 이미지 편집 (RabbitMQ 우회)    |
-| POST   | `/api/test/queue`     | 테스트용 RabbitMQ 메시지 발행       |
 | POST   | `/upload`             | S3 이미지 업로드                    |
 
 ### 수동 이미지 생성 예시
@@ -179,7 +188,7 @@ curl -X POST http://localhost:8000/api/test/queue \
   "characterId": "char-uuid",
   "projectId": "project-uuid",
   "action": "edit",
-  "imageUrl": "기존 이미지 S3 URL",
+  "imageUrl": "기존 이미지 S3 URL = media/{userId}/{projectId}/{characterId}/{timestamp}.png",
   "editRequest": "편집 요청 내용",
   "callbackUrl": "http://alb-dns/api/internal/ai/image/callback"
 }
@@ -187,8 +196,7 @@ curl -X POST http://localhost:8000/api/test/queue \
 
 ### 콜백 응답 (Spring으로 전송)
 
-> **Note**: `callbackUrl`이 메시지에 포함된 경우 해당 URL로 전송하고,  
-> 없으면 환경변수 `ALB_DNS_NAME`으로 기본 콜백 URL을 구성합니다.
+> **Note**: `callbackUrl`이 메시지에 필수로 포함되어야 합니다. 없으면 콜백이 스킩됩니다.
 
 ```json
 {
@@ -212,27 +220,28 @@ curl -X POST http://localhost:8000/api/test/queue \
 
 ## 환경 변수
 
-| 변수명                          | 설명                         | 기본값                 |
-| ------------------------------- | ---------------------------- | ---------------------- |
-| **AWS S3**                      |                              |                        |
-| `AWS_REGION`                    | 기본 AWS 리전                | `ap-northeast-2`       |
-| `AWS_S3_BUCKET_NAME`            | S3 버킷 이름                 | (필수)                 |
-| `CLOUDFRONT_URL`                | CloudFront 도메인            | (옵션)                 |
-| **AWS Bedrock**                 |                              |                        |
-| `AWS_BEDROCK_DEFAULT_REGION`    | Bedrock 리전                 | `us-east-1`            |
-| `AWS_BEDROCK_ACCESS_KEY_ID`     | Bedrock 전용 액세스 키       | (필수)                 |
-| `AWS_BEDROCK_SECRET_ACCESS_KEY` | Bedrock 전용 시크릿 키       | (필수)                 |
-| **Gemini**                      |                              |                        |
-| `GEMINI_API_KEY`                | Gemini API 키                | (필수 - 이미지 편집용) |
-| **RabbitMQ (외부)**             |                              |                        |
-| `RABBITMQ_IMAGE_HOST`           | RabbitMQ 호스트 (Private IP) | `localhost`            |
-| `RABBITMQ_IMAGE_PORT`           | RabbitMQ 포트                | `5672`                 |
-| `RABBITMQ_IMAGE_USER`           | RabbitMQ 사용자              | `guest`                |
-| `RABBITMQ_IMAGE_PASSWORD`       | RabbitMQ 비밀번호            | `guest`                |
-| `RABBITMQ_IMAGE_VHOST`          | RabbitMQ VHost               | `stolink`              |
-| `RABBITMQ_IMAGE_QUEUE`          | 이미지 큐 이름               | `stolink.image.queue`  |
-| **Spring Callback**             |                              |                        |
-| `ALB_DNS_NAME`                  | Spring ALB DNS 이름          | (필수)                 |
+| 변수명                          | 설명                        | 기본값                      |
+| ------------------------------- | --------------------------- | --------------------------- |
+| **AWS S3**                      |                             |                             |
+| `AWS_REGION`                    | 기본 AWS 리전               | `ap-northeast-2`            |
+| `AWS_S3_BUCKET_NAME`            | S3 버킷 이름                | (필수)                      |
+| `S3_ENDPOINT_URL`               | S3 엔드포인트 (MinIO용)     | (로컬: `http://minio:9000`) |
+| `S3_ACCESS_KEY_ID`              | S3 전용 액세스 키 (MinIO용) | (옵션, aws\_\* 오버라이드)  |
+| `S3_SECRET_ACCESS_KEY`          | S3 전용 시크릿 키 (MinIO용) | (옵션, aws\_\* 오버라이드)  |
+| `CLOUDFRONT_URL`                | CloudFront 도메인           | (옵션)                      |
+| **AWS Bedrock**                 |                             |                             |
+| `AWS_BEDROCK_DEFAULT_REGION`    | Bedrock 리전                | `us-east-1`                 |
+| `AWS_BEDROCK_ACCESS_KEY_ID`     | Bedrock 전용 액세스 키      | (필수)                      |
+| `AWS_BEDROCK_SECRET_ACCESS_KEY` | Bedrock 전용 시크릿 키      | (필수)                      |
+| **Gemini**                      |                             |                             |
+| `GEMINI_API_KEY`                | Gemini API 키               | (필수 - 이미지 편집용)      |
+| **RabbitMQ**                    |                             |                             |
+| `RABBITMQ_HOST`                 | RabbitMQ 호스트             | `localhost`                 |
+| `RABBITMQ_PORT`                 | RabbitMQ 포트               | `5672`                      |
+| `RABBITMQ_USER`                 | RabbitMQ 사용자             | `guest`                     |
+| `RABBITMQ_PASSWORD`             | RabbitMQ 비밀번호           | `guest`                     |
+| `RABBITMQ_VHOST`                | RabbitMQ VHost              | `stolink`                   |
+| `RABBITMQ_IMAGE_QUEUE`          | 이미지 큐 이름              | `stolink.image.queue`       |
 
 ## 프로젝트 구조
 
@@ -270,7 +279,7 @@ stolink_fastapi_image/
 ├── .env.example                   # 환경변수 예제
 ├── Dockerfile
 ├── docker-compose.yml             # 운영 배포용
-├── docker-compose-local.yml       # 로컬 개발용 (RabbitMQ 포함)
+├── docker-compose.local.yml       # 로컬 개발용 (RabbitMQ + MinIO 포함)
 ├── pyproject.toml
 └── gitsecrets.md                  # GitHub Secrets/Variables 문서
 ```

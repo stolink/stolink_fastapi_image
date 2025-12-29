@@ -24,26 +24,25 @@
 
 ### 2. Secrets (민감 정보 형식)
 
-| 이름                              | 형식 (Value Format)                    | 역할                             |
-| --------------------------------- | -------------------------------------- | -------------------------------- |
-| **AWS_BEDROCK_ACCESS_KEY_ID**     | `AKIA...` (대문자/숫자 20자)           | Bedrock 인증 ID                  |
-| **AWS_BEDROCK_SECRET_ACCESS_KEY** | `wJal...` (혼합 문자열 40자)           | Bedrock 인증 PW                  |
-| **GEMINI_API_KEY**                | `AIzaSy...` (혼합 문자열)              | Gemini API 인증                  |
-| **AWS_ROLE_S3FULL_ARN**           | `arn:aws:iam::...`                     | S3 권한 식별자                   |
-| **AWS_ROLE_SSMFULL_ARN**          | `arn:aws:iam::...`                     | SSM 권한 식별자                  |
-| **GH_PAT**                        | `ghp_...` (토큰 형식)                  | GitHub API 인증                  |
-| **NEO4J_PASSWORD**                | `[텍스트 패스워드]`                    | Neo4j 접속 암호                  |
-| **NEO4J_URI**                     | `neo4j+s://...`                        | Neo4j 접속 경로                  |
-| **NEO4J_USERNAME**                | `[사용자 계정]`                        | Neo4j 접속 계정                  |
-| **POSTGRESQL_PASSWORD**           | `[텍스트 패스워드]`                    | DB 접속 암호                     |
-| **POSTGRESQL_URL**                | `postgresql://...`                     | DB 접속 경로                     |
-| **POSTGRESQL_USERNAME**           | `[사용자 계정]`                        | DB 접속 계정                     |
-| **RABBITMQ_IMAGE_HOST**           | `10.0.x.x` (Private IPv4)              | 이미지 RabbitMQ EC2 Private IP   |
-| **RABBITMQ_IMAGE_USER**           | `[사용자 계정]`                        | 이미지 RabbitMQ 접속 계정        |
-| **RABBITMQ_IMAGE_PASSWORD**       | `[텍스트 패스워드]`                    | 이미지 RabbitMQ 접속 암호        |
-| **RABBITMQ_AGENT_HOST**           | `10.0.x.x` (Private IPv4)              | 에이전트 RabbitMQ EC2 Private IP |
-| **RABBITMQ_AGENT_USER**           | `[사용자 계정]`                        | 에이전트 RabbitMQ 접속 계정      |
-| **RABBITMQ_AGENT_PASSWORD**       | `[텍스트 패스워드]`                    | 에이전트 RabbitMQ 접속 암호      |
-| **ALB_DNS_NAME**                  | `xxx.ap-northeast-2.elb.amazonaws.com` | Spring ALB DNS 이름              |
+| 이름                              | 형식 (Value Format)          | 역할                             |
+| --------------------------------- | ---------------------------- | -------------------------------- |
+| **AWS_BEDROCK_ACCESS_KEY_ID**     | `AKIA...` (대문자/숫자 20자) | Bedrock 인증 ID                  |
+| **AWS_BEDROCK_SECRET_ACCESS_KEY** | `wJal...` (혼합 문자열 40자) | Bedrock 인증 PW                  |
+| **GEMINI_API_KEY**                | `AIzaSy...` (혼합 문자열)    | Gemini API 인증                  |
+| **AWS_ROLE_S3FULL_ARN**           | `arn:aws:iam::...`           | S3 권한 식별자                   |
+| **AWS_ROLE_SSMFULL_ARN**          | `arn:aws:iam::...`           | SSM 권한 식별자                  |
+| **GH_PAT**                        | `ghp_...` (토큰 형식)        | GitHub API 인증                  |
+| **NEO4J_PASSWORD**                | `[텍스트 패스워드]`          | Neo4j 접속 암호                  |
+| **NEO4J_URI**                     | `neo4j+s://...`              | Neo4j 접속 경로                  |
+| **NEO4J_USERNAME**                | `[사용자 계정]`              | Neo4j 접속 계정                  |
+| **POSTGRESQL_PASSWORD**           | `[텍스트 패스워드]`          | DB 접속 암호                     |
+| **POSTGRESQL_URL**                | `postgresql://...`           | DB 접속 경로                     |
+| **POSTGRESQL_USERNAME**           | `[사용자 계정]`              | DB 접속 계정                     |
+| **RABBITMQ_IMAGE_HOST**           | `10.0.x.x` (Private IPv4)    | 이미지 RabbitMQ EC2 Private IP   |
+| **RABBITMQ_IMAGE_USER**           | `[사용자 계정]`              | 이미지 RabbitMQ 접속 계정        |
+| **RABBITMQ_IMAGE_PASSWORD**       | `[텍스트 패스워드]`          | 이미지 RabbitMQ 접속 암호        |
+| **RABBITMQ_AGENT_HOST**           | `10.0.x.x` (Private IPv4)    | 에이전트 RabbitMQ EC2 Private IP |
+| **RABBITMQ_AGENT_USER**           | `[사용자 계정]`              | 에이전트 RabbitMQ 접속 계정      |
+| **RABBITMQ_AGENT_PASSWORD**       | `[텍스트 패스워드]`          | 에이전트 RabbitMQ 접속 암호      |
 
 ---

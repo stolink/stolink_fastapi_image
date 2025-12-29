@@ -82,25 +82,13 @@ class PromptService:
     
     def __init__(self):
         settings = get_settings()
+        
+        # Bedrock 전용 자격증명 및 리전 사용
         self.llm = ChatBedrockConverse(
             model=settings.bedrock_claude_model_id,
-            region_name=settings.aws_region,
-            credentials_profile_name=None,  # Use default credentials
-            # Pass AWS credentials explicitly if not using default profile
-        )
-        # Set credentials for boto3 session
-        import boto3
-        self._session = boto3.Session(
-            aws_access_key_id=settings.aws_access_key_id,
-            aws_secret_access_key=settings.aws_secret_access_key,
-            region_name=settings.aws_region,
-        )
-        # Recreate LLM with explicit credentials
-        self.llm = ChatBedrockConverse(
-            model=settings.bedrock_claude_model_id,
-            region_name=settings.aws_region,
-            aws_access_key_id=settings.aws_access_key_id,
-            aws_secret_access_key=settings.aws_secret_access_key,
+            region_name=settings.aws_bedrock_default_region,
+            aws_access_key_id=settings.aws_bedrock_access_key_id,
+            aws_secret_access_key=settings.aws_bedrock_secret_access_key,
         )
     
     def create_character_prompt(self, user_message: str) -> str:
