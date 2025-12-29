@@ -78,30 +78,32 @@ Change the short black hair to long wavy auburn hair while preserving the person
 
 
 class PromptService:
-    """Service for generating optimized prompts using Claude via LangChain."""
+    """Service for generating optimized prompts using Claude via LangChain.
     
-    def __init__(self):
-        settings = get_settings()
-        self.llm = ChatBedrockConverse(
-            model=settings.bedrock_claude_model_id,
-            region_name=settings.aws_region,
-            credentials_profile_name=None,  # Use default credentials
-            # Pass AWS credentials explicitly if not using default profile
-        )
-        # Set credentials for boto3 session
-        import boto3
-        self._session = boto3.Session(
-            aws_access_key_id=settings.aws_access_key_id,
-            aws_secret_access_key=settings.aws_secret_access_key,
-            region_name=settings.aws_region,
-        )
-        # Recreate LLM with explicit credentials
-        self.llm = ChatBedrockConverse(
-            model=settings.bedrock_claude_model_id,
-            region_name=settings.aws_region,
-            aws_access_key_id=settings.aws_access_key_id,
-            aws_secret_access_key=settings.aws_secret_access_key,
-        )
+    Attributes:
+        llm: LangChain ChatModel instance for prompt generation.
+             Can be injected for testing purposes.
+    """
+    
+    def __init__(self, llm=None):
+        """Initialize PromptService.
+        
+        Args:
+            llm: Optional LangChain ChatModel to use. If not provided,
+                 creates ChatBedrockConverse with settings from environment.
+                 Pass a mock LLM for unit testing.
+        """
+        if llm is not None:
+            self.llm = llm
+        else:
+            settings = get_settings()
+            # Bedrock 전용 자격증명 및 리전 사용
+            self.llm = ChatBedrockConverse(
+                model=settings.bedrock_claude_model_id,
+                region_name=settings.aws_bedrock_default_region,
+                aws_access_key_id=settings.aws_bedrock_access_key_id,
+                aws_secret_access_key=settings.aws_bedrock_secret_access_key,
+            )
     
     def create_character_prompt(self, user_message: str) -> str:
         """
@@ -112,6 +114,10 @@ class PromptService:
             
         Returns:
             Optimized English prompt for Nova Canvas
+            
+        Raises:
+            RuntimeError: If LLM call fails. Error is propagated for consistent
+                         error handling across all prompt methods.
         """
         try:
             messages = [
@@ -127,8 +133,10 @@ class PromptService:
             
         except Exception as e:
             logger.error(f"Failed to generate character prompt: {e}")
-            # Fallback to basic prompt
-            return f"Professional ID photo portrait, {user_message}, front view, plain background, high quality"
+            raise RuntimeError(
+                f"Failed to generate character prompt via Claude. "
+                f"Please check your Bedrock configuration. Original error: {e}"
+            ) from e
     
     def create_edit_prompt(self, edit_request: str) -> str:
         """

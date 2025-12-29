@@ -14,45 +14,71 @@ logger = logging.getLogger(__name__)
 
 
 class S3Service:
-    """Service for uploading images to AWS S3."""
+    """Service for uploading images to AWS S3 or S3-compatible storage (MinIO)."""
     
     def __init__(self):
         settings = get_settings()
         
-        # EC2 역할을 사용할 경우 인증 정보를 비워두면 자동으로 역할을 사용
-        if settings.aws_access_key_id and settings.aws_secret_access_key:
-            self.s3_client = boto3.client(
-                "s3",
-                aws_access_key_id=settings.aws_access_key_id,
-                aws_secret_access_key=settings.aws_secret_access_key,
-                region_name=settings.aws_s3_region,
-            )
-        else:
-            # EC2 IAM Role 사용 (인증 정보 없이 리전만 명시)
-            self.s3_client = boto3.client(
-                "s3",
-                region_name=settings.aws_s3_region,
-            )
+        # S3 클라이언트 설정 (MinIO 등 S3 호환 스토리지 지원)
+        client_kwargs = {
+            "region_name": settings.aws_s3_region,
+        }
+        
+        # Custom endpoint (MinIO, LocalStack 등)
+        if settings.s3_endpoint_url:
+            client_kwargs["endpoint_url"] = settings.s3_endpoint_url
+        
+        # 인증 정보: S3 전용 자격증명 우선, 없으면 AWS 기본 자격증명, EC2 IAM Role 사용 시 생략 가능
+        access_key = settings.s3_access_key_id or settings.aws_access_key_id
+        secret_key = settings.s3_secret_access_key or settings.aws_secret_access_key
+        if access_key and secret_key:
+            client_kwargs["aws_access_key_id"] = access_key
+            client_kwargs["aws_secret_access_key"] = secret_key
+        
+        self.s3_client = boto3.client("s3", **client_kwargs)
         
         self.bucket_name = settings.aws_s3_bucket_name
         self.region = settings.aws_s3_region
+        self.endpoint_url = settings.s3_endpoint_url if settings.s3_endpoint_url else None
         self.cloudfront_url = settings.cloudfront_url.rstrip("/") if settings.cloudfront_url else None
     
-    def upload_image(self, image_bytes: bytes, prefix: str = "character") -> str:
+    def upload_image(
+        self,
+        image_bytes: bytes,
+        prefix: str = "character",
+        user_id: Optional[str] = None,
+        project_id: Optional[str] = None,
+        character_id: Optional[str] = None,
+    ) -> str:
         """
         Upload image to S3 and return CloudFront URL (or S3 URL if CloudFront not configured).
         
         Args:
             image_bytes: Image data as bytes
-            prefix: Prefix for the S3 key (e.g., "character", "edited")
+            prefix: Prefix for the filename (e.g., "character", "edited")
+            user_id: User ID for hierarchical path
+            project_id: Project ID for hierarchical path
+            character_id: Character ID for hierarchical path
             
         Returns:
             CloudFront URL or S3 URL of the uploaded image
+            
+        Raises:
+            ValueError: If user_id, project_id, or character_id is missing
+            
+        S3 Key Structure:
+            media/{user_id}/{project_id}/{character_id}/{prefix}_{timestamp}.png
         """
+        # 필수 필드 검증
+        if not user_id or not project_id or not character_id:
+            raise ValueError("user_id, project_id, character_id are required for S3 upload")
+        
         try:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             file_name = f"{prefix}_{timestamp}.png"
-            s3_key = f"media/{file_name}"
+            
+            # Build hierarchical S3 key
+            s3_key = f"media/{user_id}/{project_id}/{character_id}/{file_name}"
             
             self.s3_client.put_object(
                 Bucket=self.bucket_name,
@@ -61,9 +87,12 @@ class S3Service:
                 ContentType="image/png",
             )
             
-            # CloudFront URL 우선, 없으면 S3 URL 반환
+            # URL 반환 우선순위: CloudFront > Custom Endpoint (MinIO) > S3
             if self.cloudfront_url:
                 url = f"{self.cloudfront_url}/{s3_key}"
+            elif self.endpoint_url:
+                # MinIO 등 커스텀 엔드포인트 사용
+                url = f"{self.endpoint_url.rstrip('/')}/{self.bucket_name}/{s3_key}"
             else:
                 url = f"https://{self.bucket_name}.s3.{self.region}.amazonaws.com/{s3_key}"
             
@@ -78,22 +107,35 @@ class S3Service:
         """
         Upload a file (UploadFile or file-like object) to S3.
         
+        This method is designed for general file uploads via API endpoints.
+        Unlike `upload_image()`, this method:
+        - Does NOT require user_id/project_id/character_id (uses flat 'media/' path)
+        - Accepts any file type (not just images)
+        - Returns a dict response suitable for API responses
+        
         Args:
             file: FastAPI UploadFile or file-like object with .file and .filename/.content_type
             prefix: Prefix for the S3 key (e.g., "media", "images")
             
         Returns:
             dict with message and cloudfront_url
+            
+        Raises:
+            S3UploadError: If upload fails with descriptive error message
         """
+        original_filename = getattr(file, 'filename', 'upload')
+        
         try:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             # 파일명에서 확장자 추출
-            original_filename = getattr(file, 'filename', 'upload')
             extension = original_filename.rsplit('.', 1)[-1] if '.' in original_filename else 'bin'
             file_name = f"{prefix}_{timestamp}.{extension}"
             s3_key = f"media/{file_name}"
             
             content_type = getattr(file, 'content_type', 'application/octet-stream')
+            
+            # Ensure file pointer is at the beginning (in case file was already read)
+            file.file.seek(0)
             
             # upload_fileobj를 사용하면 메모리 내의 파일 객체를 바로 업로드
             self.s3_client.upload_fileobj(
@@ -116,11 +158,17 @@ class S3Service:
             }
             
         except ClientError as e:
-            logger.error(f"Failed to upload file to S3: {e}")
-            raise
+            error_code = e.response.get('Error', {}).get('Code', 'Unknown')
+            error_msg = e.response.get('Error', {}).get('Message', str(e))
+            logger.error(f"Failed to upload file '{original_filename}' to S3: [{error_code}] {error_msg}")
+            raise RuntimeError(
+                f"S3 upload failed for file '{original_filename}': [{error_code}] {error_msg}"
+            ) from e
         except Exception as e:
-            logger.error(f"Unexpected error uploading file: {e}")
-            raise
+            logger.error(f"Unexpected error uploading file '{original_filename}': {e}")
+            raise RuntimeError(
+                f"Unexpected error uploading file '{original_filename}': {e}"
+            ) from e
     
     def download_image(self, url: str) -> bytes:
         """

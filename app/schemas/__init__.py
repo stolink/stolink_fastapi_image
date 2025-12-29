@@ -7,6 +7,7 @@ from .image_task import (
     ImageEditRequest,
     ImageResponse,
     HealthResponse,
+    QueuePublishRequest,
 )
 
 __all__ = [
@@ -17,4 +18,5 @@ __all__ = [
     "ImageEditRequest",
     "ImageResponse",
     "HealthResponse",
+    "QueuePublishRequest",
 ]

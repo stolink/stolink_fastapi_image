@@ -1,0 +1,99 @@
+# StoLink Image Worker - Local Development Docker Compose
+# MinIO를 로컬에서 실행하는 개발용 설정
+# RabbitMQ는 stolink_spring/docker-compose.local.yml에서 제공하는 공유 인스턴스 사용
+#
+# 사용법:
+# 0. 사전 준비: stolink_spring/docker-compose.local.yml을 먼저 실행하여 RabbitMQ 시작
+# 1. 환경변수 설정: cp .env.example .env 후 값 입력
+# 2. 빌드 및 실행: docker compose -f docker-compose.local.yml up --build -d
+# 3. 중지: docker compose -f docker-compose.local.yml down
+# 4. 데이터 삭제 포함 중지: docker compose -f docker-compose.local.yml down -v
+# 5. 로그 확인: docker compose -f docker-compose.local.yml logs -f image-worker
+# 6. RabbitMQ 관리 UI: http://localhost:15672 (guest/guest) - Spring docker-compose에서 제공
+# 7. MinIO Console: http://localhost:9001 (minioadmin/minioadmin)
+
+services:
+  # MinIO - 로컬 S3 호환 스토리지
+  minio:
+    image: minio/minio:latest
+    container_name: stolink-minio-local
+    ports:
+      - "9000:9000" # S3 API
+      - "9001:9001" # Web Console (http://localhost:9001)
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio_local_data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 10s
+    networks:
+      - stolink-local-network
+
+  # MinIO 버킷 초기화 (한 번만 실행)
+  minio-init:
+    image: minio/mc:latest
+    container_name: stolink-minio-init
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://minio:9000 minioadmin minioadmin;
+      mc mb local/stolink-test --ignore-existing;
+      mc anonymous set public local/stolink-test;
+      echo 'Bucket stolink-test created successfully';
+      "
+    networks:
+      - stolink-local-network
+
+  # Image Worker (FastAPI)
+  image-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: stolink-image-worker-local
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      # RabbitMQ는 Spring docker-compose의 공유 인스턴스 사용
+      RABBITMQ_HOST: stolink-rabbitmq-local
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USER: guest
+      RABBITMQ_PASSWORD: guest
+      RABBITMQ_VHOST: stolink
+      RABBITMQ_IMAGE_QUEUE: stolink.image.queue
+      # MinIO (로컬 S3) - AWS_ACCESS_KEY_ID 대신 별도 변수 사용
+      S3_ACCESS_KEY_ID: minioadmin
+      S3_SECRET_ACCESS_KEY: minioadmin
+      AWS_S3_BUCKET_NAME: stolink-test
+      AWS_S3_REGION: us-east-1
+      S3_ENDPOINT_URL: http://minio:9000
+      CLOUDFRONT_URL: ""
+      # Bedrock 자격증명은 .env 파일에서 가져옴 (AWS_BEDROCK_*)
+      # Debug mode
+      DEBUG: "true"
+    depends_on:
+      minio:
+        condition: service_healthy
+    networks:
+      - stolink-local-network
+    restart: unless-stopped
+    # volumes:
+    #   # 로컬 소스 코드 마운트 (핫 리로드용, 선택사항)
+    #   - ./app:/app/app:ro
+
+volumes:
+  minio_local_data:
+
+networks:
+  stolink-local-network:
+    name: stolink-shared-network # Spring docker-compose에서 생성한 네트워크 사용
+    external: true # Spring docker-compose.local.yml이 먼저 실행되어야 함

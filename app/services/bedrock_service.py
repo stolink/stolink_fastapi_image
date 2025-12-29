@@ -18,12 +18,26 @@ class BedrockService:
     
     def __init__(self):
         settings = get_settings()
-        self.bedrock_runtime = boto3.client(
-            "bedrock-runtime",
-            aws_access_key_id=settings.aws_access_key_id,
-            aws_secret_access_key=settings.aws_secret_access_key,
-            region_name=settings.aws_region,
-        )
+        
+        # Bedrock has separate credentials (for cross-account or different region)
+        bedrock_access_key = settings.aws_bedrock_access_key_id or settings.aws_access_key_id
+        bedrock_secret_key = settings.aws_bedrock_secret_access_key or settings.aws_secret_access_key
+        bedrock_region = settings.aws_bedrock_default_region
+        
+        if bedrock_access_key and bedrock_secret_key:
+            self.bedrock_runtime = boto3.client(
+                "bedrock-runtime",
+                aws_access_key_id=bedrock_access_key,
+                aws_secret_access_key=bedrock_secret_key,
+                region_name=bedrock_region,
+            )
+        else:
+            # EC2 IAM Role 사용 (인증 정보 없이 리전만 명시)
+            self.bedrock_runtime = boto3.client(
+                "bedrock-runtime",
+                region_name=bedrock_region,
+            )
+        
         self.claude_model_id = settings.bedrock_claude_model_id
         self.nova_canvas_model_id = settings.bedrock_nova_canvas_model_id
         # Note: Stability AI (stability_replace_model_id) has been replaced with Google Gemini

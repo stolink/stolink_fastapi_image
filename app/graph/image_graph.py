@@ -37,6 +37,8 @@ class ImageGraphState(TypedDict):
     
     # Metadata
     job_id: Optional[str]
+    user_id: Optional[str]
+    project_id: Optional[str]
     character_id: Optional[str]
 
 
@@ -138,7 +140,13 @@ def upload_to_s3_node(state: ImageGraphState) -> ImageGraphState:
         s3_service = get_s3_service()
         
         prefix = "character" if state["action"] == "create" else "edited"
-        url = s3_service.upload_image(state["generated_image_bytes"], prefix=prefix)
+        url = s3_service.upload_image(
+            state["generated_image_bytes"],
+            prefix=prefix,
+            user_id=state.get("user_id"),
+            project_id=state.get("project_id"),
+            character_id=state.get("character_id"),
+        )
         
         logger.info(f"[Node: upload_to_s3] Uploaded: {url}")
         return {**state, "result_image_url": url}

@@ -112,7 +112,13 @@ class ImageConsumer:
             if task.action == ImageAction.CREATE:
                 # Create new character image
                 logger.info(f"Creating character image for job {task.job_id}")
-                image_url = image_service.create_character_image(task.message)
+                image_url = image_service.create_character_image(
+                    task.message,
+                    job_id=task.job_id,
+                    user_id=task.user_id,
+                    project_id=task.project_id,
+                    character_id=task.character_id,
+                )
                 
             elif task.action == ImageAction.EDIT:
                 # Edit existing image
@@ -121,7 +127,14 @@ class ImageConsumer:
                 
                 edit_request = task.edit_request or task.message
                 logger.info(f"Editing image for job {task.job_id}")
-                image_url = image_service.edit_image(task.image_url, edit_request)
+                image_url = image_service.edit_image(
+                    task.image_url,
+                    edit_request,
+                    job_id=task.job_id,
+                    user_id=task.user_id,
+                    project_id=task.project_id,
+                    character_id=task.character_id,
+                )
                 
             else:
                 raise ValueError(f"Unknown action: {task.action}")
