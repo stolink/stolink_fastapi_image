@@ -1,6 +1,7 @@
 # Application Settings
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from functools import lru_cache
+from urllib.parse import quote
 
 
 class Settings(BaseSettings):
@@ -44,8 +45,9 @@ class Settings(BaseSettings):
     
     @property
     def rabbitmq_url(self) -> str:
-        # URL encode the vhost (/ becomes %2F)
-        vhost = self.rabbitmq_vhost if self.rabbitmq_vhost else ""
+        """Build RabbitMQ AMQP URL with URL-encoded vhost."""
+        # URL encode the vhost (e.g., / becomes %2F, special chars are escaped)
+        vhost = quote(self.rabbitmq_vhost, safe="") if self.rabbitmq_vhost else ""
         return f"amqp://{self.rabbitmq_user}:{self.rabbitmq_password}@{self.rabbitmq_host}:{self.rabbitmq_port}/{vhost}"
     
     model_config = SettingsConfigDict(

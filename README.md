@@ -103,13 +103,13 @@ cp .env.example .env
 docker compose -f docker-compose.local.yml up --build -d
 
 # 로그 확인
-docker compose -f docker-compose.local.yml# logs -f image-worker
+docker compose -f docker-compose.local.yml logs -f image-worker
 
 # 중지
-docker compose -f docker-compose.local.yml# down
+docker compose -f docker-compose.local.yml down
 
 # 데이터 삭제 포함 중지
-docker compose -f docker-compose.local.yml# down -v
+docker compose -f docker-compose.local.yml down -v
 ```
 
 **로컬 서비스:**
@@ -196,13 +196,20 @@ curl -X POST http://localhost:8000/api/test/queue \
 
 ### 콜백 응답 (Spring으로 전송)
 
-> **Note**: `callbackUrl`이 메시지에 필수로 포함되어야 합니다. 없으면 콜백이 스킩됩니다.
+> **Note**: `callbackUrl`이 메시지에 필수로 포함되어야 합니다. 없으면 콜백이 스킵됩니다.
+
+> **Retry Policy**: 콜백 전송 실패 시 **지수 백오프**로 최대 3회 재시도합니다 (1초 → 2초 → 4초).
+>
+> - 4xx 클라이언트 에러: 재시도 안함
+> - 5xx 서버 에러 / 타임아웃: 재시도 수행
+
+성공 시:
 
 ```json
 {
   "jobId": "job-uuid",
   "characterId": "char-uuid",
-  "status": "COMPLETED",
+  "status": "SUCCESS",
   "imageUrl": "https://cloudfront.net/media/user-123/project-456/char-789/character_xxx.png"
 }
 ```
@@ -256,10 +263,10 @@ stolink_fastapi_image/
 │   ├── services/
 │   │   ├── bedrock_service.py     # AWS Bedrock (Claude, Nova Canvas)
 │   │   ├── gemini_service.py      # Google Gemini 이미지 편집
-│   │   ├── prompt_service.py      # 프롬프트 엔지니어링
+│   │   ├── prompt_service.py      # 프롬프트 엔지니어링 (LLM 주입 가능)
 │   │   ├── image_service.py       # 이미지 생성/편집
-│   │   ├── s3_service.py          # S3 업로드
-│   │   └── callback_service.py    # Spring Boot 콜백
+│   │   ├── s3_service.py          # S3 업로드 (계층적 경로)
+│   │   └── callback_service.py    # Spring Boot 콜백 (지수 백오프 재시도)
 │   ├── consumers/
 │   │   └── image_consumer.py      # RabbitMQ 컨슈머
 │   ├── graph/
@@ -296,6 +303,21 @@ GitHub Actions를 통해 자동 배포됩니다:
 1. pytest 테스트 실행
 2. Docker 이미지 빌드 (GHCR 푸시)
 3. SSM으로 EC2에 배포
+
+## 테스트
+
+`PromptService`는 LLM 주입을 지원하여 단위 테스트 시 mock을 사용할 수 있습니다:
+
+```python
+from unittest.mock import Mock
+from app.services.prompt_service import PromptService
+
+mock_llm = Mock()
+mock_llm.invoke.return_value.content = "test prompt"
+
+service = PromptService(llm=mock_llm)
+result = service.create_character_prompt("test")
+```
 
 ## 관련 프로젝트
 

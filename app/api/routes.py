@@ -49,7 +49,13 @@ async def generate_image(request: ImageGenerateRequest):
     This endpoint bypasses the RabbitMQ queue and directly generates an image.
     """
     try:
-        logger.info(f"Manual image generation request: {request.message[:50]}...")
+        # None-safe string slicing for logging
+        message_preview = (request.message[:50] + "...") if request.message else "(empty)"
+        logger.info(f"Manual image generation request: {message_preview}")
+        
+        if not request.message:
+            raise HTTPException(status_code=400, detail="Message is required for image generation")
+        
         image_service = get_image_service()
         image_url = image_service.create_character_image(request.message)
         
@@ -58,12 +64,14 @@ async def generate_image(request: ImageGenerateRequest):
             image_url=image_url,
         )
         
+    except HTTPException:
+        raise
+    except ValueError as e:
+        logger.error(f"Invalid request for image generation: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.error(f"Image generation failed: {e}")
-        return ImageResponse(
-            success=False,
-            error=str(e),
-        )
+        raise HTTPException(status_code=500, detail=f"Image generation failed: {e}")
 
 
 @router.post("/api/image/edit", response_model=ImageResponse)
@@ -74,7 +82,15 @@ async def edit_image(request: ImageEditRequest):
     This endpoint bypasses the RabbitMQ queue and directly edits an image.
     """
     try:
-        logger.info(f"Manual image edit request: {request.edit_request[:50]}...")
+        # None-safe string slicing for logging
+        edit_preview = (request.edit_request[:50] + "...") if request.edit_request else "(empty)"
+        logger.info(f"Manual image edit request: {edit_preview}")
+        
+        if not request.edit_request:
+            raise HTTPException(status_code=400, detail="Edit request is required")
+        if not request.image_url:
+            raise HTTPException(status_code=400, detail="Image URL is required")
+        
         image_service = get_image_service()
         image_url = image_service.edit_image(request.image_url, request.edit_request)
         
@@ -83,12 +99,14 @@ async def edit_image(request: ImageEditRequest):
             image_url=image_url,
         )
         
+    except HTTPException:
+        raise
+    except ValueError as e:
+        logger.error(f"Invalid request for image edit: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.error(f"Image edit failed: {e}")
-        return ImageResponse(
-            success=False,
-            error=str(e),
-        )
+        raise HTTPException(status_code=500, detail=f"Image edit failed: {e}")
 
 
 @router.post("/upload")

@@ -107,22 +107,35 @@ class S3Service:
         """
         Upload a file (UploadFile or file-like object) to S3.
         
+        This method is designed for general file uploads via API endpoints.
+        Unlike `upload_image()`, this method:
+        - Does NOT require user_id/project_id/character_id (uses flat 'media/' path)
+        - Accepts any file type (not just images)
+        - Returns a dict response suitable for API responses
+        
         Args:
             file: FastAPI UploadFile or file-like object with .file and .filename/.content_type
             prefix: Prefix for the S3 key (e.g., "media", "images")
             
         Returns:
             dict with message and cloudfront_url
+            
+        Raises:
+            S3UploadError: If upload fails with descriptive error message
         """
+        original_filename = getattr(file, 'filename', 'upload')
+        
         try:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             # 파일명에서 확장자 추출
-            original_filename = getattr(file, 'filename', 'upload')
             extension = original_filename.rsplit('.', 1)[-1] if '.' in original_filename else 'bin'
             file_name = f"{prefix}_{timestamp}.{extension}"
             s3_key = f"media/{file_name}"
             
             content_type = getattr(file, 'content_type', 'application/octet-stream')
+            
+            # Ensure file pointer is at the beginning (in case file was already read)
+            file.file.seek(0)
             
             # upload_fileobj를 사용하면 메모리 내의 파일 객체를 바로 업로드
             self.s3_client.upload_fileobj(
@@ -145,11 +158,17 @@ class S3Service:
             }
             
         except ClientError as e:
-            logger.error(f"Failed to upload file to S3: {e}")
-            raise
+            error_code = e.response.get('Error', {}).get('Code', 'Unknown')
+            error_msg = e.response.get('Error', {}).get('Message', str(e))
+            logger.error(f"Failed to upload file '{original_filename}' to S3: [{error_code}] {error_msg}")
+            raise RuntimeError(
+                f"S3 upload failed for file '{original_filename}': [{error_code}] {error_msg}"
+            ) from e
         except Exception as e:
-            logger.error(f"Unexpected error uploading file: {e}")
-            raise
+            logger.error(f"Unexpected error uploading file '{original_filename}': {e}")
+            raise RuntimeError(
+                f"Unexpected error uploading file '{original_filename}': {e}"
+            ) from e
     
     def download_image(self, url: str) -> bytes:
         """

@@ -1,37 +1,18 @@
 # StoLink Image Worker - Local Development Docker Compose
-# RabbitMQ와 MinIO를 로컬에서 함께 실행하는 개발용 설정
+# MinIO를 로컬에서 실행하는 개발용 설정
+# RabbitMQ는 stolink_spring/docker-compose.local.yml에서 제공하는 공유 인스턴스 사용
 #
 # 사용법:
+# 0. 사전 준비: stolink_spring/docker-compose.local.yml을 먼저 실행하여 RabbitMQ 시작
 # 1. 환경변수 설정: cp .env.example .env 후 값 입력
 # 2. 빌드 및 실행: docker compose -f docker-compose.local.yml up --build -d
 # 3. 중지: docker compose -f docker-compose.local.yml down
 # 4. 데이터 삭제 포함 중지: docker compose -f docker-compose.local.yml down -v
 # 5. 로그 확인: docker compose -f docker-compose.local.yml logs -f image-worker
-# 6. RabbitMQ 관리 UI: http://localhost:15672 (guest/guest)
+# 6. RabbitMQ 관리 UI: http://localhost:15672 (guest/guest) - Spring docker-compose에서 제공
 # 7. MinIO Console: http://localhost:9001 (minioadmin/minioadmin)
 
 services:
-  # RabbitMQ Message Broker (로컬 개발용)
-  rabbitmq:
-    image: rabbitmq:3.13-management-alpine
-    container_name: stolink-rabbitmq-local
-    ports:
-      - "5672:5672" # AMQP
-      - "15672:15672" # Management UI (http://localhost:15672)
-    environment:
-      RABBITMQ_DEFAULT_USER: guest
-      RABBITMQ_DEFAULT_PASS: guest
-      RABBITMQ_DEFAULT_VHOST: stolink
-    volumes:
-      - rabbitmq_local_data:/var/lib/rabbitmq
-    healthcheck:
-      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-    networks:
-      - stolink-local-network
-
   # MinIO - 로컬 S3 호환 스토리지
   minio:
     image: minio/minio:latest
@@ -82,8 +63,8 @@ services:
     env_file:
       - .env
     environment:
-      # RabbitMQ는 로컬 컨테이너 사용
-      RABBITMQ_HOST: rabbitmq
+      # RabbitMQ는 Spring docker-compose의 공유 인스턴스 사용
+      RABBITMQ_HOST: stolink-rabbitmq-local
       RABBITMQ_PORT: 5672
       RABBITMQ_USER: guest
       RABBITMQ_PASSWORD: guest
@@ -100,8 +81,6 @@ services:
       # Debug mode
       DEBUG: "true"
     depends_on:
-      rabbitmq:
-        condition: service_healthy
       minio:
         condition: service_healthy
     networks:
@@ -112,10 +91,9 @@ services:
     #   - ./app:/app/app:ro
 
 volumes:
-  rabbitmq_local_data:
   minio_local_data:
 
 networks:
   stolink-local-network:
-    name: stolink-shared-network # Spring과 동일한 네트워크 이름 사용
-    driver: bridge
+    name: stolink-shared-network # Spring docker-compose에서 생성한 네트워크 사용
+    external: true # Spring docker-compose.local.yml이 먼저 실행되어야 함
