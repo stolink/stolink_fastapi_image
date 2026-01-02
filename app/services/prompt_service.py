@@ -21,7 +21,7 @@ CREATE_CHARACTER_SYSTEM_PROMPT = """당신은 최고의 신분증 및 프로필 
 규칙:
 1. 자세: 신분증 사진처럼 정면을 응시하고 가만히 있는 자세 (ID photo pose, front view, looking at camera)
 2. 구도: 상반신 위주의 증명사진 구도 (shoulder-up portrait, passport photo style)
-3. 배경: 인물을 방해하지 않는 깔끔하고 단순한 배경 (plain solid background)
+3. 배경: 사용자가 지정한 배경이 있다면 이를 반영하고, 없다면 깔끔하고 단순한 배경 (Follow user's background description if provided, otherwise plain solid background)
 4. 일관성: 얼굴의 특징이 명확하게 드러나는 고해상도 묘사
 5. 결과물은 영어 프롬프트만 출력하세요. 다른 설명은 필요 없습니다."""
 
@@ -79,15 +79,15 @@ Change the short black hair to long wavy auburn hair while preserving the person
 
 class PromptService:
     """Service for generating optimized prompts using Claude via LangChain.
-    
+
     Attributes:
         llm: LangChain ChatModel instance for prompt generation.
              Can be injected for testing purposes.
     """
-    
+
     def __init__(self, llm=None):
         """Initialize PromptService.
-        
+
         Args:
             llm: Optional LangChain ChatModel to use. If not provided,
                  creates ChatBedrockConverse with settings from environment.
@@ -104,17 +104,17 @@ class PromptService:
                 aws_access_key_id=settings.aws_bedrock_access_key_id,
                 aws_secret_access_key=settings.aws_bedrock_secret_access_key,
             )
-    
+
     def create_character_prompt(self, user_message: str) -> str:
         """
         Generate optimized prompt for character image creation.
-        
+
         Args:
             user_message: User's character description in any language
-            
+
         Returns:
             Optimized English prompt for Nova Canvas
-            
+
         Raises:
             RuntimeError: If LLM call fails. Error is propagated for consistent
                          error handling across all prompt methods.
@@ -124,27 +124,27 @@ class PromptService:
                 SystemMessage(content=CREATE_CHARACTER_SYSTEM_PROMPT),
                 HumanMessage(content=f"다음 인물 설명을 기반으로 증명사진 스타일의 영어 프롬프트를 작성하세요:\n\n{user_message}"),
             ]
-            
+
             response = self.llm.invoke(messages)
             enhanced_prompt = response.content.strip()
-            
+
             logger.info(f"Generated character prompt: {enhanced_prompt[:100]}...")
             return enhanced_prompt
-            
+
         except Exception as e:
             logger.error(f"Failed to generate character prompt: {e}")
             raise RuntimeError(
                 f"Failed to generate character prompt via Claude. "
                 f"Please check your Bedrock configuration. Original error: {e}"
             ) from e
-    
+
     def create_edit_prompt(self, edit_request: str) -> str:
         """
         Generate an edit prompt for Gemini image editing.
-        
+
         Args:
             edit_request: User's edit request in any language
-            
+
         Returns:
             Optimized English edit prompt for Gemini
         """
@@ -153,9 +153,9 @@ class PromptService:
                 SystemMessage(content=EDIT_IMAGE_SYSTEM_PROMPT),
                 HumanMessage(content=f"Convert this edit request to an optimized English prompt for Gemini:\n\n{edit_request}"),
             ]
-            
+
             response = self.llm.invoke(messages)
-            
+
             # Handle response content - could be string or list
             content = response.content
             if isinstance(content, list):
@@ -166,23 +166,23 @@ class PromptService:
                 )
             else:
                 response_text = str(content)
-            
+
             # Clean up the response
             edit_prompt = response_text.strip()
-            
+
             # Remove any quotes that might wrap the prompt
             if edit_prompt.startswith('"') and edit_prompt.endswith('"'):
                 edit_prompt = edit_prompt[1:-1]
             if edit_prompt.startswith("'") and edit_prompt.endswith("'"):
                 edit_prompt = edit_prompt[1:-1]
-            
+
             # Validate that we got a meaningful prompt
             if not edit_prompt or len(edit_prompt) < 10:
                 raise ValueError(f"Edit prompt too short or empty: {edit_prompt}")
-            
+
             logger.info(f"Generated edit prompt: {edit_prompt[:100]}...")
             return edit_prompt
-            
+
         except Exception as e:
             logger.error(f"Failed to generate edit prompt: {e}")
             raise RuntimeError(
