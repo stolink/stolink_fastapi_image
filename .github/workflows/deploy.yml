@@ -3,7 +3,7 @@ name: Deploy
 on:
   push:
     branches:
-      - main # production 환경
+      - release # production 환경
       - dev # develop 환경
 
 concurrency:
@@ -38,7 +38,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: test
     # 브랜치에 따라 환경 자동 선택
-    environment: ${{ github.ref == 'refs/heads/main' && 'production' || 'develop' }}
+    environment: ${{ github.ref == 'refs/heads/release' && 'production' || 'develop' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -59,8 +59,8 @@ jobs:
         with:
           images: ghcr.io/${{ github.repository }}
           tags: |
-            type=raw,value=${{ github.ref == 'refs/heads/main' && 'latest' || 'dev-latest' }}
-            type=sha,prefix=${{ github.ref == 'refs/heads/main' && 'sha-' || 'dev-sha-' }}
+            type=raw,value=${{ github.ref == 'refs/heads/release' && 'latest' || 'dev-latest' }}
+            type=sha,prefix=${{ github.ref == 'refs/heads/release' && 'sha-' || 'dev-sha-' }}
 
       - name: Build and push
         uses: docker/build-push-action@v5
@@ -76,7 +76,7 @@ jobs:
     needs: [test, build-and-push]
     runs-on: ubuntu-latest
     # 브랜치에 따라 환경 자동 선택
-    environment: ${{ github.ref == 'refs/heads/main' && 'production' || 'develop' }}
+    environment: ${{ github.ref == 'refs/heads/release' && 'production' || 'develop' }}
     steps:
       - name: Checkout (for docker-compose.yml only)
         uses: actions/checkout@v4
@@ -107,7 +107,7 @@ jobs:
           RABBITMQ_IMAGE_VHOST: ${{ vars.RABBITMQ_IMAGE_VHOST }}
           GH_PAT: ${{ secrets.GH_PAT }}
           # 브랜치에 따라 이미지 태그 결정
-          IMAGE_TAG: ${{ github.ref == 'refs/heads/main' && 'latest' || 'dev-latest' }}
+          IMAGE_TAG: ${{ github.ref == 'refs/heads/release' && 'latest' || 'dev-latest' }}
         run: |
           # .env 파일 내용 생성
           ENV_CONTENT="AWS_REGION=${AWS_REGION}
@@ -134,8 +134,8 @@ jobs:
           COMPOSE_BASE64=$(echo "$COMPOSE_CONTENT" | base64 -w 0)
 
           # SSM 명령 실행 및 Command ID 캡처
-          # dev 브랜치: dev-fastapi-image 태그, main 브랜치: stolink-fastapi-image 태그
-          EC2_TAG=${{ github.ref == 'refs/heads/main' && 'stolink-fastapi-image' || 'dev-fastapi-image' }}
+          # dev 브랜치: dev-fastapi-image 태그, release 브랜치: stolink-fastapi-image 태그
+          EC2_TAG=${{ github.ref == 'refs/heads/release' && 'stolink-fastapi-image' || 'dev-fastapi-image' }}
 
           COMMAND_ID=$(aws ssm send-command \
             --document-name "AWS-RunShellScript" \
@@ -144,7 +144,7 @@ jobs:
               \"sudo -i -u ubuntu bash -c 'mkdir -p /home/ubuntu/stolink-fastapi-image'\",
               \"sudo rm -f /home/ubuntu/stolink-fastapi-image/.env && echo '${ENV_BASE64}' | base64 -d | sudo -u ubuntu tee /home/ubuntu/stolink-fastapi-image/.env > /dev/null\",
               \"sudo rm -f /home/ubuntu/stolink-fastapi-image/docker-compose.yml && echo '${COMPOSE_BASE64}' | base64 -d | sudo -u ubuntu tee /home/ubuntu/stolink-fastapi-image/docker-compose.yml > /dev/null\",
-              \"sudo -i -u ubuntu bash -c 'cd /home/ubuntu/stolink-fastapi-image && echo '\\''${GH_PAT}'\\'' | sudo docker login ghcr.io -u ${{ github.repository_owner }} --password-stdin && sudo docker compose down --remove-orphans && sudo docker compose up -d --pull always && sudo docker image prune -f'\"
+              \"sudo -i -u ubuntu bash -c 'cd /home/ubuntu/stolink-fastapi-image && echo ${GH_PAT} | sudo docker login ghcr.io -u ${{ github.repository_owner }} --password-stdin && sudo docker compose down --remove-orphans && sudo docker compose up -d --pull always && sudo docker image prune -f'\"
             ]" \
             --timeout-seconds 300 \
             --max-concurrency "50%" \
