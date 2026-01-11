@@ -165,6 +165,7 @@ jobs:
               \"sudo -i -u ubuntu bash -c 'mkdir -p /home/ubuntu/stolink-fastapi-image'\",
               \"sudo rm -f /home/ubuntu/stolink-fastapi-image/.env && echo '${ENV_BASE64}' | base64 -d | sudo -u ubuntu tee /home/ubuntu/stolink-fastapi-image/.env > /dev/null\",
               \"sudo rm -f /home/ubuntu/stolink-fastapi-image/docker-compose.yml && echo '${COMPOSE_BASE64}' | base64 -d | sudo -u ubuntu tee /home/ubuntu/stolink-fastapi-image/docker-compose.yml > /dev/null\",
+              \"sudo -i -u ubuntu bash -c 'aws ecr get-login-password --region ap-northeast-2 | sudo docker login --username AWS --password-stdin ${AWS_ACCOUNT_ID}.dkr.ecr.ap-northeast-2.amazonaws.com'\",
               \"sudo -i -u ubuntu bash -c 'cd /home/ubuntu/stolink-fastapi-image && sudo docker compose down --remove-orphans && sudo docker compose up -d --pull always && sudo docker image prune -f'\"
             ]" \
             --timeout-seconds 300 \
