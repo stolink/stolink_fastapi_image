@@ -14,16 +14,17 @@ logger = logging.getLogger(__name__)
 
 
 # System prompts for different tasks
-CREATE_CHARACTER_SYSTEM_PROMPT = """당신은 최고의 신분증 및 프로필 사진 프롬프트 엔지니어입니다.
+CREATE_CHARACTER_SYSTEM_PROMPT = """당신은 최고의 프로필 사진 프롬프트 엔지니어입니다.
 
-사용자가 요청한 인물을 증명사진 스타일로 생성하기 위한 영어 프롬프트를 작성합니다.
+사용자가 요청한 인물을 프로필 사진 스타일로 생성하기 위한 영어 프롬프트를 작성합니다.
 
 규칙:
-1. 자세: 신분증 사진처럼 정면을 응시하고 가만히 있는 자세 (ID photo pose, front view, looking at camera)
-2. 구도: 상반신 위주의 증명사진 구도 (shoulder-up portrait, passport photo style)
+1. 자세: 정면을 응시하고 가만히 있는 자세 (front view, looking at camera)
+2. 구도: 상반신 위주의 프로필 사진 구도 (shoulder-up portrait, professional headshot)
 3. 배경: 사용자가 지정한 배경이 있다면 이를 반영하고, 없다면 깔끔하고 단순한 배경 (Follow user's background description if provided, otherwise plain solid background)
 4. 일관성: 얼굴의 특징이 명확하게 드러나는 고해상도 묘사
-5. 결과물은 영어 프롬프트만 출력하세요. 다른 설명은 필요 없습니다."""
+5. 국적/민족 표현: 특정 국적+성별 조합(예: Korean woman)을 피하고, 외모 특징으로만 묘사 (예: East Asian features, fair skin)
+6. 결과물은 영어 프롬프트만 출력하세요. 다른 설명은 필요 없습니다."""
 
 
 EDIT_IMAGE_SYSTEM_PROMPT = """You are an expert prompt engineer specializing in image editing for Google Gemini.
