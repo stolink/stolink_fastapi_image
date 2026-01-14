@@ -18,81 +18,93 @@ MAX_BACKOFF_SECONDS = 10.0
 
 class CallbackService:
     """Service for sending callbacks to Spring Boot backend with retry support."""
-    
+
     def __init__(self, max_retries: int = MAX_RETRIES, timeout: float = 30.0):
         """Initialize CallbackService.
-        
+
         Args:
             max_retries: Maximum number of retry attempts for failed callbacks.
             timeout: HTTP request timeout in seconds.
         """
         self.timeout = timeout
         self.max_retries = max_retries
-    
+
     async def send_success_callback(
         self,
         job_id: str,
         image_url: str,
         character_id: Optional[str] = None,
+        user_id: Optional[str] = None,
+        project_id: Optional[str] = None,
         callback_url: Optional[str] = None,
     ) -> bool:
         """
         Send successful image generation callback.
-        
+
         Args:
             job_id: Job ID to report
             image_url: URL of the generated/edited image
             character_id: Optional character ID
+            user_id: Optional user ID
+            project_id: Optional project ID
             callback_url: Callback URL (required)
-            
+
         Returns:
             True if callback was successful
-            
+
         Raises:
             ValueError: If callback_url is not provided
         """
         payload = ImageCallbackPayload(
             job_id=job_id,
+            user_id=user_id,
+            project_id=project_id,
             character_id=character_id,
-            status="SUCCESS",
+            status="completed",
             image_url=image_url,
             error=None,
         )
         return await self._send_callback_with_retry(payload, callback_url)
-    
+
     async def send_failure_callback(
         self,
         job_id: str,
         error: str,
         character_id: Optional[str] = None,
+        user_id: Optional[str] = None,
+        project_id: Optional[str] = None,
         callback_url: Optional[str] = None,
     ) -> bool:
         """
         Send failed image generation callback.
-        
+
         Args:
             job_id: Job ID to report
             error: Error message
             character_id: Optional character ID
+            user_id: Optional user ID
+            project_id: Optional project ID
             callback_url: Callback URL (required)
-            
+
         Returns:
             True if callback was successful
-            
+
         Raises:
             ValueError: If callback_url is not provided
         """
         payload = ImageCallbackPayload(
             job_id=job_id,
+            user_id=user_id,
+            project_id=project_id,
             character_id=character_id,
-            status="FAILED",
+            status="failed",
             image_url=None,
-            error=error,
+            error=error[:255] if error else None,
         )
         return await self._send_callback_with_retry(payload, callback_url)
-    
+
     async def _send_callback_with_retry(
-        self, 
+        self,
         payload: ImageCallbackPayload,
         callback_url: Optional[str] = None,
     ) -> bool:
@@ -100,22 +112,22 @@ class CallbackService:
         if not callback_url:
             logger.warning(f"No callback_url provided for job {payload.job_id}, skipping callback")
             return False
-        
+
         last_error: Optional[Exception] = None
-        
+
         for attempt in range(self.max_retries + 1):
             try:
                 success = await self._send_callback(payload, callback_url)
                 if success:
                     return True
-                    
+
                 # Non-retryable failure (e.g., 4xx response)
                 if attempt == self.max_retries:
                     logger.error(
                         f"Callback failed after {self.max_retries + 1} attempts for job {payload.job_id}"
                     )
                     return False
-                    
+
             except (httpx.TimeoutException, httpx.RequestError) as e:
                 last_error = e
                 if attempt == self.max_retries:
@@ -123,7 +135,7 @@ class CallbackService:
                         f"Callback failed after {self.max_retries + 1} attempts for job {payload.job_id}: {e}"
                     )
                     return False
-            
+
             # Calculate exponential backoff with jitter
             backoff = min(INITIAL_BACKOFF_SECONDS * (2 ** attempt), MAX_BACKOFF_SECONDS)
             logger.warning(
@@ -131,22 +143,53 @@ class CallbackService:
                 f"retrying in {backoff:.1f}s..."
             )
             await asyncio.sleep(backoff)
-        
+
         return False
-    
+
     async def _send_callback(
-        self, 
+        self,
         payload: ImageCallbackPayload,
         callback_url: str,
     ) -> bool:
         """Send a single callback attempt to Spring Boot."""
         async with httpx.AsyncClient(timeout=self.timeout) as client:
+            # Dual-key strategy: Provide BOTH snake_case and camelCase to handle Backend ambiguity
+            # Status: Uppercase as per standard Enum conventions
+            status_upper = payload.status.upper()
+
+            json_payload = {
+                # ID fields (Both formats)
+                "job_id": payload.job_id,
+                "jobId": payload.job_id,
+                "user_id": payload.user_id,
+                "userId": payload.user_id,
+                "project_id": payload.project_id,
+                "projectId": payload.project_id,
+                "character_id": payload.character_id,
+                "characterId": payload.character_id,
+
+                # Status (Uppercase)
+                "status": status_upper,
+
+                # Image URL (Both formats)
+                "image_url": payload.image_url,
+                "imageUrl": payload.image_url,
+
+                # Error (Safe truncation)
+                "error": payload.error
+            }
+
+            # Remove None values to be cleaner (optional, but good practice)
+            json_payload = {k: v for k, v in json_payload.items() if v is not None}
+
+
+            logger.info(f"Sending callback to {callback_url} with payload: {json_payload}")
             response = await client.post(
                 callback_url,
-                json=payload.model_dump(by_alias=True),
+                json=json_payload,
                 headers={"Content-Type": "application/json"},
             )
-            
+
             if response.status_code in (200, 201, 202):
                 logger.info(f"Callback sent successfully to {callback_url} for job {payload.job_id}")
                 return True
