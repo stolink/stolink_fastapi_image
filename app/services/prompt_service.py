@@ -24,7 +24,8 @@ CREATE_CHARACTER_SYSTEM_PROMPT = """당신은 최고의 프로필 사진 프롬�
 3. 배경: 사용자가 지정한 배경이 있다면 이를 반영하고, 없다면 깔끔하고 단순한 배경 (Follow user's background description if provided, otherwise plain solid background)
 4. 일관성: 얼굴의 특징이 명확하게 드러나는 고해상도 묘사
 5. 국적/민족 표현: 특정 국적+성별 조합(예: Korean woman)을 피하고, 외모 특징으로만 묘사 (예: East Asian features, fair skin)
-6. 결과물은 영어 프롬프트만 출력하세요. 다른 설명은 필요 없습니다."""
+6. 이름/고유명사 처리: 특정 인물(연예인, 캐릭터 등)의 이름이 언급되면, 절대 이름을 프롬프트에 포함하지 마세요. 대신 그 인물의 외모 특징(헤어스타일, 얼굴 특징, 분위기 등)을 상세히 묘사하여 대체하세요. (예: "Iron Man" -> "man wearing high-tech red and gold armor")
+7. 결과물은 영어 프롬프트만 출력하세요. 다른 설명은 필요 없습니다."""
 
 
 EDIT_IMAGE_SYSTEM_PROMPT = """You are an expert prompt engineer specializing in image editing for Google Gemini.
