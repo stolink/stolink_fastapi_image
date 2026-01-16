@@ -1,5 +1,5 @@
 # Pydantic Schemas for Image Tasks
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, AliasChoices
 from typing import Optional
 from enum import Enum
 
@@ -18,22 +18,28 @@ class ImageTaskMessage(BaseModel):
     project_id: str = Field(..., alias="projectId")
     action: ImageAction
     message: str = Field(..., description="Character description or edit request")
-    image_url: Optional[str] = Field(None, alias="imageUrl", description="Existing image URL for edit action")
+    image_url: Optional[str] = Field(
+        None,
+        validation_alias=AliasChoices("imageUrl", "originalImageUrl", "image_url", "original_image_url"),
+        description="Existing image URL for edit action"
+    )
     edit_request: Optional[str] = Field(None, alias="editRequest", description="Edit request details")
     callback_url: Optional[str] = Field(None, alias="callbackUrl")
-    
+
     class Config:
         populate_by_name = True
 
 
 class ImageCallbackPayload(BaseModel):
     """Callback payload to send to Spring Boot."""
-    job_id: str = Field(..., alias="jobId")
-    character_id: Optional[str] = Field(None, alias="characterId")
+    job_id: str = Field(..., alias="job_id")
+    user_id: Optional[str] = Field(None, alias="user_id")  # Added: may be required by backend
+    project_id: Optional[str] = Field(None, alias="project_id")  # Added: may be required by backend
+    character_id: Optional[str] = Field(None, alias="character_id")
     status: str  # "completed" or "failed"
-    image_url: Optional[str] = Field(None, alias="imageUrl")
+    image_url: Optional[str] = Field(None, alias="image_url")
     error: Optional[str] = None
-    
+
     class Config:
         populate_by_name = True
         by_alias = True
@@ -54,14 +60,14 @@ class ImageEditRequest(BaseModel):
     edit_request: str = Field(..., alias="editRequest", description="Edit instructions")
     job_id: Optional[str] = Field(None, alias="jobId")
     character_id: Optional[str] = Field(None, alias="characterId")
-    
+
 
 class ImageResponse(BaseModel):
     """Response for image generation/edit APIs."""
     success: bool = True
     image_url: Optional[str] = Field(None, alias="imageUrl")
     error: Optional[str] = None
-    
+
     class Config:
         populate_by_name = True
         by_alias = True
@@ -71,7 +77,7 @@ class HealthResponse(BaseModel):
     """Health check response."""
     status: str = "healthy"
     rabbitmq_connected: bool = Field(False, alias="rabbitmqConnected")
-    
+
     class Config:
         populate_by_name = True
         by_alias = True
@@ -87,6 +93,6 @@ class QueuePublishRequest(BaseModel):
     image_url: Optional[str] = Field(None, alias="imageUrl", description="Required for edit action")
     edit_request: Optional[str] = Field(None, alias="editRequest")
     callback_url: Optional[str] = Field(None, alias="callbackUrl", description="Optional callback URL")
-    
+
     class Config:
         populate_by_name = True

@@ -35,10 +35,13 @@ jobs:
         run: uv run pytest -v
 
   build-and-push:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04-arm # ARM64 native runner (에뮬레이션 오버헤드 제거)
     needs: test
     # 브랜치에 따라 환경 자동 선택
     environment: ${{ github.ref == 'refs/heads/release' && 'production' || 'develop' }}
+    outputs:
+      account-id: ${{ steps.aws.outputs.account_id }}
+      sha-short: ${{ steps.vars.outputs.sha_short }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -46,18 +49,28 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Login to GHCR
-        uses: docker/login-action@v3
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
         with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          role-to-assume: ${{ secrets.AWS_ROLE_SSMFULL_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Get AWS Account ID
+        id: aws
+        run: echo "account_id=$(aws sts get-caller-identity --query Account --output text)" >> $GITHUB_OUTPUT
+
+      - name: Set Short SHA
+        id: vars
+        run: echo "sha_short=$(echo ${{ github.sha }} | cut -c1-7)" >> $GITHUB_OUTPUT
+
+      - name: Login to ECR
+        uses: aws-actions/amazon-ecr-login@v2
 
       - name: Docker meta
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ github.repository }}
+          images: ${{ steps.aws.outputs.account_id }}.dkr.ecr.${{ vars.AWS_REGION }}.amazonaws.com/stolink/stolink-fastapi-image
           tags: |
             type=raw,value=${{ github.ref == 'refs/heads/release' && 'latest' || 'dev-latest' }}
             type=sha,prefix=${{ github.ref == 'refs/heads/release' && 'sha-' || 'dev-sha-' }}
@@ -66,7 +79,6 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
-          platforms: linux/arm64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           cache-from: type=gha
@@ -105,9 +117,12 @@ jobs:
           RABBITMQ_IMAGE_USER: ${{ secrets.RABBITMQ_IMAGE_USER }}
           RABBITMQ_IMAGE_PASSWORD: ${{ secrets.RABBITMQ_IMAGE_PASSWORD }}
           RABBITMQ_IMAGE_VHOST: ${{ vars.RABBITMQ_IMAGE_VHOST }}
-          GH_PAT: ${{ secrets.GH_PAT }}
-          # 브랜치에 따라 이미지 태그 결정
+          # ECR 이미지 정보
+          AWS_ACCOUNT_ID: ${{ needs.build-and-push.outputs.account-id }}
+          # 브랜치에 따라 이미지 태그 결정 (SSM 배포용)
           IMAGE_TAG: ${{ github.ref == 'refs/heads/release' && 'latest' || 'dev-latest' }}
+          # Parameter Store용 고유 SHA 태그 (ASG 신규 인스턴스용 - ECR 태그와 일치)
+          UNIQUE_TAG: ${{ github.ref == 'refs/heads/release' && format('sha-{0}', needs.build-and-push.outputs.sha-short) || format('dev-sha-{0}', needs.build-and-push.outputs.sha-short) }}
         run: |
           # .env 파일 내용 생성
           ENV_CONTENT="AWS_REGION=${AWS_REGION}
@@ -124,7 +139,7 @@ jobs:
           RABBITMQ_IMAGE_PASSWORD=${RABBITMQ_IMAGE_PASSWORD}
           RABBITMQ_IMAGE_VHOST=${RABBITMQ_IMAGE_VHOST}
           RABBITMQ_IMAGE_QUEUE=stolink.image.queue
-          IMAGE_NAME=ghcr.io/${{ github.repository }}:${IMAGE_TAG}"
+          IMAGE_NAME=${AWS_ACCOUNT_ID}.dkr.ecr.${{ vars.AWS_REGION }}.amazonaws.com/stolink/stolink-fastapi-image:${UNIQUE_TAG}"
 
           # docker-compose.yml 내용 읽기
           COMPOSE_CONTENT=$(cat docker-compose.yml)
@@ -132,6 +147,12 @@ jobs:
           # Base64로 인코딩하여 SSM으로 전달 (특수문자 이스케이프 문제 해결)
           ENV_BASE64=$(echo "$ENV_CONTENT" | base64 -w 0)
           COMPOSE_BASE64=$(echo "$COMPOSE_CONTENT" | base64 -w 0)
+
+          # Parameter Store에 저장 (ASG 신규 인스턴스 자동 설정용)
+          ENV_PATH=${{ github.ref == 'refs/heads/release' && '/prod' || '/dev' }}/stolink-fastapi-image
+          aws ssm put-parameter --name "${ENV_PATH}/env" --value "$ENV_CONTENT" --type SecureString --overwrite
+          aws ssm put-parameter --name "${ENV_PATH}/docker-compose" --value "$COMPOSE_CONTENT" --type String --overwrite
+          echo "✅ Parameter Store updated: ${ENV_PATH}"
 
           # SSM 명령 실행 및 Command ID 캡처
           # dev 브랜치: dev-fastapi-image 태그, release 브랜치: stolink-fastapi-image 태그
@@ -144,7 +165,8 @@ jobs:
               \"sudo -i -u ubuntu bash -c 'mkdir -p /home/ubuntu/stolink-fastapi-image'\",
               \"sudo rm -f /home/ubuntu/stolink-fastapi-image/.env && echo '${ENV_BASE64}' | base64 -d | sudo -u ubuntu tee /home/ubuntu/stolink-fastapi-image/.env > /dev/null\",
               \"sudo rm -f /home/ubuntu/stolink-fastapi-image/docker-compose.yml && echo '${COMPOSE_BASE64}' | base64 -d | sudo -u ubuntu tee /home/ubuntu/stolink-fastapi-image/docker-compose.yml > /dev/null\",
-              \"sudo -i -u ubuntu bash -c 'cd /home/ubuntu/stolink-fastapi-image && echo ${GH_PAT} | sudo docker login ghcr.io -u ${{ github.repository_owner }} --password-stdin && sudo docker compose down --remove-orphans && sudo docker compose up -d --pull always && sudo docker image prune -f'\"
+              \"sudo -i -u ubuntu bash -c 'aws ecr get-login-password --region ap-northeast-2 | sudo docker login --username AWS --password-stdin ${AWS_ACCOUNT_ID}.dkr.ecr.ap-northeast-2.amazonaws.com'\",
+              \"sudo -i -u ubuntu bash -c 'cd /home/ubuntu/stolink-fastapi-image && sudo docker compose down --remove-orphans && sudo docker compose up -d --pull always && sudo docker image prune -f'\"
             ]" \
             --timeout-seconds 300 \
             --max-concurrency "50%" \
