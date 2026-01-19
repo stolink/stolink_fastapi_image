@@ -112,7 +112,7 @@ class ImageConsumer:
             if task.action == ImageAction.CREATE:
                 # Create new character image
                 logger.info(f"Creating character image for job {task.job_id}")
-                image_url = image_service.create_character_image(
+                image_url = await image_service.create_character_image(
                     task.message,
                     job_id=task.job_id,
                     user_id=task.user_id,
@@ -127,7 +127,7 @@ class ImageConsumer:
 
                 edit_request = task.edit_request or task.message
                 logger.info(f"Editing image for job {task.job_id}")
-                image_url = image_service.edit_image(
+                image_url = await image_service.edit_image(
                     task.image_url,
                     edit_request,
                     job_id=task.job_id,
