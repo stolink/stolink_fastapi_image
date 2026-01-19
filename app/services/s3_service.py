@@ -40,7 +40,14 @@ class S3Service:
         self.bucket_name = settings.aws_s3_bucket_name
         self.region = settings.aws_s3_region
         self.endpoint_url = settings.s3_endpoint_url if settings.s3_endpoint_url else None
-        self.cloudfront_url = settings.cloudfront_url.rstrip("/") if settings.cloudfront_url else None
+        
+        # CloudFront URL 정규화 (항상 스킴 포함)
+        self.cloudfront_url = None
+        if settings.cloudfront_url:
+            cf_url = settings.cloudfront_url.rstrip("/")
+            if not cf_url.startswith(("http://", "https://")):
+                cf_url = f"https://{cf_url}"
+            self.cloudfront_url = cf_url
 
     def upload_image(
         self,
@@ -180,6 +187,16 @@ class S3Service:
         Returns:
             Image data as bytes
         """
+        # URL 스킴 누락 방어 코드 (프로토콜이 없으면 https:// 기본 적용)
+        if url and not url.startswith(("http://", "https://", "/")):
+            # 도메인 형태인 경우 (마침표 포함)
+            first_segment = url.split("/")[0]
+            if "." in first_segment:
+                 # 로컬호스트나 도커 서비스명인 경우 http, 그 외는 https
+                scheme = "http" if "localhost" in first_segment or "minio" in first_segment else "https"
+                url = f"{scheme}://{url}"
+                logger.info(f"Fixed missing scheme in URL: {url}")
+
         # Docker 연결 문제 해결: localhost -> minio (또는 stolink-minio-local)
         # 로컬 Docker 환경에서 RabbitMQ로부터 받은 메시지의 URL이 localhost일 경우
         # 컨테이너 내부에서는 접속할 수 없으므로 서비스명으로 변환
