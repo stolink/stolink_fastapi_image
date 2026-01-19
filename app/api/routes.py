@@ -45,25 +45,25 @@ async def readiness_check():
 async def generate_image(request: ImageGenerateRequest):
     """
     Manually trigger image generation (for testing).
-    
+
     This endpoint bypasses the RabbitMQ queue and directly generates an image.
     """
     try:
         # None-safe string slicing for logging
         message_preview = (request.message[:50] + "...") if request.message else "(empty)"
         logger.info(f"Manual image generation request: {message_preview}")
-        
+
         if not request.message:
             raise HTTPException(status_code=400, detail="Message is required for image generation")
-        
+
         image_service = get_image_service()
-        image_url = image_service.create_character_image(request.message)
-        
+        image_url = await image_service.create_character_image(request.message)
+
         return ImageResponse(
             success=True,
             image_url=image_url,
         )
-        
+
     except HTTPException:
         raise
     except ValueError as e:
@@ -78,27 +78,27 @@ async def generate_image(request: ImageGenerateRequest):
 async def edit_image(request: ImageEditRequest):
     """
     Manually trigger image editing (for testing).
-    
+
     This endpoint bypasses the RabbitMQ queue and directly edits an image.
     """
     try:
         # None-safe string slicing for logging
         edit_preview = (request.edit_request[:50] + "...") if request.edit_request else "(empty)"
         logger.info(f"Manual image edit request: {edit_preview}")
-        
+
         if not request.edit_request:
             raise HTTPException(status_code=400, detail="Edit request is required")
         if not request.image_url:
             raise HTTPException(status_code=400, detail="Image URL is required")
-        
+
         image_service = get_image_service()
-        image_url = image_service.edit_image(request.image_url, request.edit_request)
-        
+        image_url = await image_service.edit_image(request.image_url, request.edit_request)
+
         return ImageResponse(
             success=True,
             image_url=image_url,
         )
-        
+
     except HTTPException:
         raise
     except ValueError as e:
@@ -113,10 +113,10 @@ async def edit_image(request: ImageEditRequest):
 async def upload_image(file: UploadFile = File(...)):
     """
     Upload an image file to S3 and return the CloudFront URL.
-    
+
     Args:
         file: The image file to upload
-        
+
     Returns:
         dict with message and cloudfront_url
     """
@@ -124,7 +124,7 @@ async def upload_image(file: UploadFile = File(...)):
         s3_service = get_s3_service()
         result = await s3_service.upload_file(file, prefix="upload")
         return result
-        
+
     except Exception as e:
         logger.error(f"File upload failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
