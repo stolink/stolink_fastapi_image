@@ -64,8 +64,18 @@ class GeminiService:
                 ),
             )
             
+            # Check for valid response
+            if not response.candidates:
+                raise GeminiImageGenerationError("Gemini returned no candidates.")
+            
+            candidate = response.candidates[0]
+            if not candidate.content or not candidate.content.parts:
+                finish_reason = getattr(candidate, "finish_reason", "UNKNOWN")
+                logger.error(f"[GeminiService] No content generated. Finish reason: {finish_reason}")
+                raise GeminiImageGenerationError(f"Gemini refused to generate image. Finish reason: {finish_reason}")
+
             # Extract the generated image from response
-            for part in response.candidates[0].content.parts:
+            for part in candidate.content.parts:
                 if part.inline_data is not None:
                     # Gemini returns base64 encoded image
                     image_data = part.inline_data.data
