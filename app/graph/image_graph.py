@@ -25,16 +25,16 @@ class ImageGraphState(TypedDict):
     action: Literal["create", "edit"]
     message: str  # Character description or edit request
     source_image_url: Optional[str]  # For edit action
-    
+
     # Intermediate
     enhanced_prompt: Optional[str]
     edit_prompt: Optional[str]  # For edit action (Gemini)
     generated_image_bytes: Optional[bytes]
-    
+
     # Output
     result_image_url: Optional[str]
     error: Optional[str]
-    
+
     # Metadata
     job_id: Optional[str]
     user_id: Optional[str]
@@ -53,7 +53,7 @@ def generate_prompt_node(state: ImageGraphState) -> ImageGraphState:
     """
     try:
         prompt_service = get_prompt_service()
-        
+
         if state["action"] == "create":
             # Generate character creation prompt
             logger.info(f"[Node: generate_prompt] Creating prompt for: {state['message'][:50]}...")
@@ -70,7 +70,7 @@ def generate_prompt_node(state: ImageGraphState) -> ImageGraphState:
                 **state,
                 "edit_prompt": edit_prompt,
             }
-            
+
     except Exception as e:
         logger.error(f"[Node: generate_prompt] Failed: {e}")
         return {**state, "error": str(e)}
@@ -82,19 +82,19 @@ def create_image_node(state: ImageGraphState) -> ImageGraphState:
     """
     if state.get("error"):
         return state
-    
+
     try:
         logger.info("[Node: create_image] Invoking Nova Canvas...")
         bedrock = get_bedrock_service()
-        
+
         image_bytes = bedrock.invoke_nova_canvas(
             prompt=state["enhanced_prompt"],
-            negative_prompt="blurry, distorted, low quality, deformed face"
+            negative_prompt="blurry, distorted, low quality, deformed face, chibi, cartoon, 2-head-tall, anime style, flat illustration, nude, naked, partially dressed, suggestive, NSFW, explicit, bare chest, shirtless, undressed, revealing clothing"
         )
-        
+
         logger.info(f"[Node: create_image] Generated image: {len(image_bytes)} bytes")
         return {**state, "generated_image_bytes": image_bytes}
-        
+
     except Exception as e:
         logger.error(f"[Node: create_image] Failed: {e}")
         return {**state, "error": str(e)}
@@ -106,23 +106,23 @@ def edit_image_node(state: ImageGraphState) -> ImageGraphState:
     """
     if state.get("error"):
         return state
-    
+
     try:
         logger.info("[Node: edit_image] Downloading source image...")
         s3_service = get_s3_service()
         source_bytes = s3_service.download_image(state["source_image_url"])
-        
+
         logger.info("[Node: edit_image] Invoking Google Gemini...")
         gemini = get_gemini_service()
-        
+
         edited_bytes = gemini.edit_image(
             image_bytes=source_bytes,
             edit_prompt=state["edit_prompt"],
         )
-        
+
         logger.info(f"[Node: edit_image] Edited image: {len(edited_bytes)} bytes")
         return {**state, "generated_image_bytes": edited_bytes}
-        
+
     except Exception as e:
         logger.error(f"[Node: edit_image] Failed: {e}")
         return {**state, "error": str(e)}
@@ -134,11 +134,11 @@ def upload_to_s3_node(state: ImageGraphState) -> ImageGraphState:
     """
     if state.get("error") or not state.get("generated_image_bytes"):
         return state
-    
+
     try:
         logger.info("[Node: upload_to_s3] Uploading to S3...")
         s3_service = get_s3_service()
-        
+
         prefix = "character" if state["action"] == "create" else "edited"
         url = s3_service.upload_image(
             state["generated_image_bytes"],
@@ -147,10 +147,10 @@ def upload_to_s3_node(state: ImageGraphState) -> ImageGraphState:
             project_id=state.get("project_id"),
             character_id=state.get("character_id"),
         )
-        
+
         logger.info(f"[Node: upload_to_s3] Uploaded: {url}")
         return {**state, "result_image_url": url}
-        
+
     except Exception as e:
         logger.error(f"[Node: upload_to_s3] Failed: {e}")
         return {**state, "error": str(e)}
@@ -173,20 +173,20 @@ def route_by_action(state: ImageGraphState) -> str:
 
 def build_image_graph() -> StateGraph:
     """Build and compile the image generation graph."""
-    
+
     # Create graph with state schema
     graph = StateGraph(ImageGraphState)
-    
+
     # Add nodes
     graph.add_node("generate_prompt", generate_prompt_node)
     graph.add_node("create_image", create_image_node)
     graph.add_node("edit_image", edit_image_node)
     graph.add_node("upload_to_s3", upload_to_s3_node)
-    
+
     # Add edges
     # START -> generate_prompt
     graph.add_edge(START, "generate_prompt")
-    
+
     # generate_prompt -> (create_image | edit_image) based on action
     graph.add_conditional_edges(
         "generate_prompt",
@@ -197,16 +197,16 @@ def build_image_graph() -> StateGraph:
             "end": END,
         }
     )
-    
+
     # create_image -> upload_to_s3
     graph.add_edge("create_image", "upload_to_s3")
-    
+
     # edit_image -> upload_to_s3
     graph.add_edge("edit_image", "upload_to_s3")
-    
+
     # upload_to_s3 -> END
     graph.add_edge("upload_to_s3", END)
-    
+
     return graph.compile()
 
 
