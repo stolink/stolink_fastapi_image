@@ -38,7 +38,7 @@ class EditImagePromptMakerCrew:
             사용자가 변경을 요청해도 '얼굴 형태, 눈코입의 위치, 조명 방향, 정적인 자세'는 절대로 건드리지 않습니다. 
             **노화 요청 시 'significantly aged', 'deep wrinkles', 'distinct gray hair', 'mature skin texture' 같이 변화가 확실히 느껴지는 강한 명시적 키워드를 반드시 포함합니다.**""",
             llm="gemini/gemini-2.5-flash",
-            verbose=True,
+            verbose=False,
         )
 
     @task
@@ -79,7 +79,7 @@ class EditImagePromptMakerCrew:
         return Crew(
             agents=[self.image_edit_prompt_maker_agent()],
             tasks=[self.make_edit_prompt_task()],
-            verbose=True,
+            verbose=False,
         )
 
 
@@ -101,12 +101,13 @@ class EditImageService:
     
     def __init__(self):
         self.settings = get_settings()
-        # S3 클라이언트 초기화 (명시적 인증 정보 사용)
+        # S3 클라이언트 초기화 (명시적 인증 정보 및 s3v4 서명 버전 사용)
         self.s3_client = boto3.client(
             's3',
             aws_access_key_id=self.settings.aws_access_key_id,
             aws_secret_access_key=self.settings.aws_secret_access_key,
-            region_name=self.settings.aws_region
+            region_name=self.settings.aws_region,
+            config=boto3.session.Config(signature_version='s3v4')
         )
 
     async def edit_image(self, image_url: str, edit_request: str, user_id: str = "default") -> str:
@@ -124,7 +125,18 @@ class EditImageService:
         # CrewAI로 편집 프롬프트 생성 (블로킹 I/O이므로 스레드 풀에서 실행)
         edit_crew = EditImagePromptMakerCrew().crew()
         kickoff_result = await run_in_threadpool(edit_crew.kickoff, inputs={"edit_request": edit_request})
+        
+        # CrewAI 결과 추출 (딕셔너리 형태의 결과에서 태스크 출력물만 가져옴)
         enhanced_prompt = kickoff_result.raw
+        if isinstance(enhanced_prompt, dict):
+            enhanced_prompt = enhanced_prompt.get('make_edit_prompt_task', '')
+            
+        if not enhanced_prompt:
+            logger.error("프롬프트 생성 결과가 비어있습니다.")
+            raise ImageEditingError(
+                message="프롬프트 생성에 실패했습니다. 요청 내용을 확인 후 다시 시도해주세요.",
+                error_code="ERR_PROMPT_GENERATION_FAILED"
+            )
         
         # S3 URL을 Presigned URL로 변환 (Replicate이 접근할 수 있도록)
         presigned_url = await self._get_presigned_url(image_url)
@@ -135,7 +147,7 @@ class EditImageService:
         
         # Nano Banana 모델로 이미지 편집 (재시도 로직 적용, 스레드 풀에서 실행)
         try:
-            output = await run_in_threadpool(
+            output_list = await run_in_threadpool(
                 self._call_replicate_with_retry,
                 {
                     "prompt": enhanced_prompt,
@@ -143,6 +155,18 @@ class EditImageService:
                     "output_format": FILENAME_EXT
                 }
             )
+            
+            # Replicate 결과 유효성 검증 (보통 URL 문자열 리스트를 반환)
+            if not output_list or not isinstance(output_list, list) or not output_list[0]:
+                raise ImageEditingError(
+                    message="이미지 편집 결과가 유효하지 않습니다. 다시 시도해 주세요.",
+                    error_code="ERR_IMG_OUTPUT_INVALID"
+                )
+            
+            edited_image_url = str(output_list[0])
+            
+        except ImageEditingError:
+            raise
         except Exception as e:
             # 3회 실패 후 Graceful Error 처리
             logger.error(f"이미지 편집 최종 실패: {e}")
@@ -153,7 +177,7 @@ class EditImageService:
             )
         
         # S3에 업로드하고 URL 반환
-        return await self._upload_to_s3(str(output), "edited", user_id)
+        return await self._upload_to_s3(edited_image_url, "edited", user_id)
 
     @retry(
         retry=retry_if_exception_type((replicate.exceptions.ModelError, replicate.exceptions.ReplicateError, requests.exceptions.RequestException)),
@@ -177,8 +201,11 @@ class EditImageService:
         """
         match = re.match(r'https://([^.]+)\.s3\.([^.]+)\.amazonaws\.com/(.+)', s3_url)
         if not match:
-            logger.warning(f"S3 URL 형식이 올바르지 않아 Presigned URL 생성을 건너뜁니다: {s3_url}")
-            return s3_url
+            logger.error(f"S3 URL 형식이 올바르지 않아 Presigned URL 생성을 실패했습니다: {s3_url}")
+            raise ImageEditingError(
+                message="원본 이미지 URL 형식이 올바르지 않습니다.",
+                error_code="ERR_INVALID_S3_URL_FORMAT"
+            )
 
         bucket = match.group(1)
         region = match.group(2)
