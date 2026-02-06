@@ -1,6 +1,3 @@
-# 이미지 편집 서비스 : 기존 이미지를 수정하거나 요소를 추가/변경
-# nano_banana 프로젝트에서 이관됨
-
 import logging
 import re
 import boto3
@@ -10,8 +7,16 @@ from datetime import datetime
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type, before_sleep_log
 from crewai import Crew, Agent, Task
 from crewai.project import CrewBase, task, agent, crew
+from starlette.concurrency import run_in_threadpool
 
 from app.config import get_settings
+
+logger = logging.getLogger(__name__)
+
+# Constants
+S3_FOLDER_PREFIX = "geminiImages"
+FILENAME_EXT = "png"
+DEFAULT_EXPIRATION = 3600  # 1 hour
 
 
 @CrewBase
@@ -104,7 +109,7 @@ class EditImageService:
             region_name=self.settings.aws_region
         )
 
-    def edit_image(self, image_url: str, edit_request: str, user_id: str = "default") -> str:
+    async def edit_image(self, image_url: str, edit_request: str, user_id: str = "default") -> str:
         """
         기존 이미지를 편집
         
@@ -116,31 +121,31 @@ class EditImageService:
         Returns:
             편집된 이미지의 S3 URL
         """
-        # CrewAI로 편집 프롬프트 생성
+        # CrewAI로 편집 프롬프트 생성 (블로킹 I/O이므로 스레드 풀에서 실행)
         edit_crew = EditImagePromptMakerCrew().crew()
-        enhanced_prompt = edit_crew.kickoff(inputs={"edit_request": edit_request}).raw
+        kickoff_result = await run_in_threadpool(edit_crew.kickoff, inputs={"edit_request": edit_request})
+        enhanced_prompt = kickoff_result.raw
         
         # S3 URL을 Presigned URL로 변환 (Replicate이 접근할 수 있도록)
-        presigned_url = self._get_presigned_url(image_url)
+        presigned_url = await self._get_presigned_url(image_url)
         
-        # 디버그 출력
-        print(f"\n[DEBUG] 원본 S3 URL: {image_url}")
-        print(f"[DEBUG] Presigned URL: {presigned_url[:100]}...")
-        print(f"[DEBUG] 프롬프트: {enhanced_prompt[:200]}...")
+        logger.debug(f"원본 S3 URL: {image_url}")
+        logger.debug(f"Presigned URL: {presigned_url[:100]}...")
+        logger.debug(f"프롬프트: {enhanced_prompt[:200]}...")
         
-        
-        # Nano Banana 모델로 이미지 편집 (재시도 로직 적용)
+        # Nano Banana 모델로 이미지 편집 (재시도 로직 적용, 스레드 풀에서 실행)
         try:
-            output = self._call_replicate_with_retry(
+            output = await run_in_threadpool(
+                self._call_replicate_with_retry,
                 {
                     "prompt": enhanced_prompt,
                     "image_input": [presigned_url],
-                    "output_format": "png"
+                    "output_format": FILENAME_EXT
                 }
             )
         except Exception as e:
             # 3회 실패 후 Graceful Error 처리
-            print(f"[ERROR] 이미지 편집 최종 실패: {e}")
+            logger.error(f"이미지 편집 최종 실패: {e}")
             raise ImageEditingError(
                 message="현재 이미지 서버 사용량이 많아 작업을 완료할 수 없습니다. 잠시 후 다시 시도해주세요.",
                 error_code="ERR_IMG_NANO_TIMEOUT",
@@ -148,7 +153,7 @@ class EditImageService:
             )
         
         # S3에 업로드하고 URL 반환
-        return self._upload_to_s3(str(output), "edited", user_id)
+        return await self._upload_to_s3(str(output), "edited", user_id)
 
     @retry(
         retry=retry_if_exception_type((replicate.exceptions.ModelError, replicate.exceptions.ReplicateError, requests.exceptions.RequestException)),
@@ -160,60 +165,77 @@ class EditImageService:
     def _call_replicate_with_retry(self, input_data):
         return replicate.run("google/nano-banana", input=input_data)
 
-    def _get_presigned_url(self, s3_url: str) -> str:
+    async def _get_presigned_url(self, s3_url: str) -> str:
         """
         S3 URL에서 버킷과 키를 추출하여 Presigned URL 생성 (1시간 유효)
-        
-        Args:
-            s3_url: S3 URL (https://bucket-name.s3.region.amazonaws.com/key 형식)
-            
-        Returns:
-            Presigned URL
+        """
+        return await run_in_threadpool(self._sync_get_presigned_url, s3_url)
+
+    def _sync_get_presigned_url(self, s3_url: str) -> str:
+        """
+        동기 방식의 Presigned URL 생성 로직
         """
         match = re.match(r'https://([^.]+)\.s3\.([^.]+)\.amazonaws\.com/(.+)', s3_url)
-        if match:
-            bucket = match.group(1)
-            region = match.group(2)
-            key = match.group(3)
+        if not match:
+            logger.warning(f"S3 URL 형식이 올바르지 않아 Presigned URL 생성을 건너뜁니다: {s3_url}")
+            return s3_url
+
+        bucket = match.group(1)
+        region = match.group(2)
+        key = match.group(3)
+        
+        try:
+            # 현재 클라이언트의 리전과 동일하면 재사용, 아니면 리전별 임시 클라이언트 생성
+            if region == self.settings.aws_region:
+                client = self.s3_client
+            else:
+                client = boto3.client(
+                    's3',
+                    aws_access_key_id=self.settings.aws_access_key_id,
+                    aws_secret_access_key=self.settings.aws_secret_access_key,
+                    region_name=region,
+                    config=boto3.session.Config(signature_version='s3v4')
+                )
             
-            # 해당 region의 S3 클라이언트로 presigned URL 생성
-            regional_s3_client = boto3.client(
-                's3',
-                aws_access_key_id=self.settings.aws_access_key_id,
-                aws_secret_access_key=self.settings.aws_secret_access_key,
-                region_name=region,
-                config=boto3.session.Config(signature_version='s3v4')
-            )
-            presigned_url = regional_s3_client.generate_presigned_url(
+            presigned_url = client.generate_presigned_url(
                 'get_object',
                 Params={'Bucket': bucket, 'Key': key},
-                ExpiresIn=3600  # 1시간
+                ExpiresIn=DEFAULT_EXPIRATION
             )
             return presigned_url
-        return s3_url  # 변환 실패 시 원본 URL 반환
+        except Exception as e:
+            logger.error(f"Presigned URL 생성 중 오류 발생: {e}")
+            return s3_url
 
-    def _upload_to_s3(self, url: str, prefix: str, user_id: str) -> str:
+    async def _upload_to_s3(self, url: str, prefix: str, user_id: str) -> str:
         """
         URL에서 이미지를 다운로드하여 S3에 업로드
-        
-        Args:
-            url: 편집된 이미지 URL
-            prefix: 파일명 접두사 (created, edited 등)
-            user_id: 사용자 ID
-            
-        Returns:
-            업로드된 이미지의 S3 URL
         """
-        response = requests.get(url)
-        file_name = f"{prefix}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
-        # 사용자별 폴더 구조: geminiImages/{user_id}/{filename}
-        s3_key = f"geminiImages/{user_id}/{file_name}"
-        
-        self.s3_client.put_object(
-            Bucket=self.settings.aws_s3_bucket_name,
-            Key=s3_key,
-            Body=response.content,
-            ContentType='image/png'
-        )
-        
-        return f"https://{self.settings.aws_s3_bucket_name}.s3.{self.settings.aws_region}.amazonaws.com/{s3_key}"
+        return await run_in_threadpool(self._sync_upload_to_s3, url, prefix, user_id)
+
+    def _sync_upload_to_s3(self, url: str, prefix: str, user_id: str) -> str:
+        """
+        동기 방식의 S3 업로드 로직
+        """
+        try:
+            response = requests.get(url, timeout=10)
+            response.raise_for_status()
+            
+            file_name = f"{prefix}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.{FILENAME_EXT}"
+            s3_key = f"{S3_FOLDER_PREFIX}/{user_id}/{file_name}"
+            
+            self.s3_client.put_object(
+                Bucket=self.settings.aws_s3_bucket_name,
+                Key=s3_key,
+                Body=response.content,
+                ContentType=f'image/{FILENAME_EXT}'
+            )
+            
+            return f"https://{self.settings.aws_s3_bucket_name}.s3.{self.settings.aws_region}.amazonaws.com/{s3_key}"
+            
+        except requests.exceptions.RequestException as e:
+            logger.error(f"이미지 다운로드 실패 ({url}): {e}")
+            raise ImageEditingError("편집된 이미지를 다운로드하는 데 실패했습니다.", "ERR_DOWNLOAD_FAILED")
+        except Exception as e:
+            logger.error(f"S3 업로드 실패: {e}")
+            raise ImageEditingError("편집된 파일을 저장소에 업로드하는 데 실패했습니다.", "ERR_S3_UPLOAD_FAILED")
